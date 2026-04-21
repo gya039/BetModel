@@ -76,6 +76,11 @@ SEASON = 2026
 BANKROLL_EUR = 500.0
 ACCA_BANKROLL_EUR = 100.0
 
+# Spread model gate: set to True once spread_model.pkl has been validated
+# via spread_model.py diagnostics. While False, spread cover probs are computed
+# and stored in the prediction dict but never used for bet selection.
+USE_SPREAD_MODEL = False
+
 ODDS_TEAM_MAP = {
     "Arizona Diamondbacks": "AZ",
     "Baltimore Orioles": "BAL",
@@ -326,6 +331,34 @@ def fetch_bullpen_stats(pitchers: dict) -> dict:
     return out
 
 
+def _compute_top_relievers_by_team(pitchers: dict) -> dict:
+    """
+    Returns {team_abbr: {"top2": set of pids, "top3": set of pids}}
+    Uses pregame season-to-date stats only. Ranks by:
+      saves*2 + holds*1 + k_bb_pct*20  (leverage score)
+    """
+    team_relievers: dict[str, list] = defaultdict(list)
+    for pid, p in pitchers.items():
+        if int(safe_float(p.get("games_started"), 0) or 0) > 0:
+            continue
+        team = p.get("team")
+        if not team:
+            continue
+        saves = safe_float(p.get("saves"), 0) or 0.0
+        holds = safe_float(p.get("holds"), 0) or 0.0
+        k = safe_float(p.get("k"), 0) or 0.0
+        walks = safe_float(p.get("walks"), 0) or 0.0
+        bf = max(safe_float(p.get("batters_faced"), 1) or 1.0, 1.0)
+        k_bb_pct = (k - walks) / bf
+        score = saves * 2.0 + holds * 1.0 + max(0.0, k_bb_pct) * 20.0
+        team_relievers[team].append((pid, score))
+    result = {}
+    for team, ranked in team_relievers.items():
+        sorted_pids = [pid for pid, _ in sorted(ranked, key=lambda x: x[1], reverse=True)]
+        result[team] = {"top2": set(sorted_pids[:2]), "top3": set(sorted_pids[:3])}
+    return result
+
+
 def _fetch_live_boxscore(game_pk: int) -> dict:
     try:
         return get(f"{MLB}/game/{game_pk}/feed/live")
@@ -337,8 +370,9 @@ def fetch_recent_bullpen_usage(completed: list[dict], pitchers: dict, target_dat
     """
     Add bullpen fatigue from the latest completed games.
 
-    Uses recent boxscores for innings and reliever counts. If a boxscore is missing,
-    the daily pipeline keeps neutral fatigue values rather than crashing.
+    Uses recent boxscores for innings and reliever counts. Computes leverage-aware
+    features (top 2/top 3 by saves+holds+K-BB%) alongside legacy features.
+    If a boxscore is missing, neutral fatigue values are preserved.
     """
     target = datetime.strptime(target_date, "%Y-%m-%d").date()
     recent = []
@@ -348,44 +382,76 @@ def fetch_recent_bullpen_usage(completed: list[dict], pitchers: dict, target_dat
         if 1 <= days_back <= 3:
             recent.append((days_back, g))
 
-    usage = defaultdict(lambda: {
+    usage: dict = defaultdict(lambda: {
         "bp_ip_last_3d": 0.0,
         "bp_ip_yesterday": 0.0,
         "bp_relievers_last_3d": 0.0,
         "bp_relievers_yesterday": 0.0,
         "bp_top_used_yesterday": 0.0,
+        "bp_top2_used_yesterday": 0.0,
+        "bp_top2_backtoback": 0.0,
+        "bp_top3_outs_last_3d": 0.0,
     })
 
-    top_reliever_ids = {
+    # Per-team leverage ranking from current season-to-date stats
+    top_by_team = _compute_top_relievers_by_team(pitchers)
+
+    # Legacy global threshold: any reliever with saves+holds >= 3 (no starts)
+    global_top_ids = {
         pid for pid, p in pitchers.items()
         if (safe_float(p.get("saves"), 0) or 0) + (safe_float(p.get("holds"), 0) or 0) >= 3
         and (safe_float(p.get("games_started"), 0) or 0) <= 0
     }
 
+    # Track per-team per-day reliever PIDs and top-3 outs for back-to-back + outs features
+    team_day_pids: dict[str, dict[int, set]] = defaultdict(lambda: defaultdict(set))
+    team_day_top3_outs: dict[str, dict[int, float]] = defaultdict(lambda: defaultdict(float))
+
     for days_back, g in recent:
         feed = _fetch_live_boxscore(g["game_pk"])
-        teams = feed.get("liveData", {}).get("boxscore", {}).get("teams", {})
+        teams_box = feed.get("liveData", {}).get("boxscore", {}).get("teams", {})
         for side in ("home", "away"):
             team_abbr = g.get(f"{side}_team")
-            team_box = teams.get(side, {})
+            team_box = teams_box.get(side, {})
             pitcher_ids = team_box.get("pitchers", [])
             players = team_box.get("players", {})
             if not team_abbr or len(pitcher_ids) <= 1:
                 continue
-            # First listed pitcher is the starter in MLB boxscores; bullpen is everyone after.
+            # First pitcher in MLB boxscore is the starter; everyone after is bullpen
             reliever_ids = pitcher_ids[1:]
+            top3_ids = top_by_team.get(team_abbr, {}).get("top3", set())
             reliever_ip = 0.0
+            top3_outs = 0.0
             for pid in reliever_ids:
                 pdata = players.get(f"ID{pid}", {})
                 pitching = pdata.get("stats", {}).get("pitching", {})
-                reliever_ip += parse_ip(pitching.get("inningsPitched", 0))
+                ip = parse_ip(pitching.get("inningsPitched", 0))
+                reliever_ip += ip
+                if pid in top3_ids:
+                    top3_outs += ip * 3.0
+                team_day_pids[team_abbr][days_back].add(pid)
+            team_day_top3_outs[team_abbr][days_back] += top3_outs
             usage[team_abbr]["bp_ip_last_3d"] += reliever_ip
             usage[team_abbr]["bp_relievers_last_3d"] += len(reliever_ids)
             if days_back == 1:
                 usage[team_abbr]["bp_ip_yesterday"] += reliever_ip
                 usage[team_abbr]["bp_relievers_yesterday"] += len(reliever_ids)
-                if any(pid in top_reliever_ids for pid in reliever_ids):
+                if any(pid in global_top_ids for pid in reliever_ids):
                     usage[team_abbr]["bp_top_used_yesterday"] = 1.0
+
+    # Compute leverage features now that all days are collected
+    all_teams = set(usage.keys()) | set(team_day_pids.keys())
+    for team_abbr in all_teams:
+        top2_ids = top_by_team.get(team_abbr, {}).get("top2", set())
+        yday_pids = team_day_pids[team_abbr].get(1, set())
+        day2_pids = team_day_pids[team_abbr].get(2, set())
+        usage[team_abbr]["bp_top2_used_yesterday"] = 1.0 if top2_ids & yday_pids else 0.0
+        usage[team_abbr]["bp_top2_backtoback"] = (
+            1.0 if (top2_ids & yday_pids) and (top2_ids & day2_pids) else 0.0
+        )
+        usage[team_abbr]["bp_top3_outs_last_3d"] = round(
+            sum(team_day_top3_outs[team_abbr].values()), 1
+        )
 
     return {team: dict(vals) for team, vals in usage.items()}
 
@@ -571,6 +637,9 @@ def build_features(
     fd["BP_RELIEVERS_LAST_3D_DIFF"] = fd["HOME_BP_RELIEVERS_LAST_3D"] - fd["AWAY_BP_RELIEVERS_LAST_3D"]
     fd["BP_RELIEVERS_YESTERDAY_DIFF"] = fd["HOME_BP_RELIEVERS_YESTERDAY"] - fd["AWAY_BP_RELIEVERS_YESTERDAY"]
     fd["BP_TOP_USED_YESTERDAY_DIFF"] = fd["HOME_BP_TOP_USED_YESTERDAY"] - fd["AWAY_BP_TOP_USED_YESTERDAY"]
+    fd["BP_TOP2_USED_YESTERDAY_DIFF"] = fd.get("HOME_BP_TOP2_USED_YESTERDAY", 0.0) - fd.get("AWAY_BP_TOP2_USED_YESTERDAY", 0.0)
+    fd["BP_TOP2_BACKTOBACK_DIFF"] = fd.get("HOME_BP_TOP2_BACKTOBACK", 0.0) - fd.get("AWAY_BP_TOP2_BACKTOBACK", 0.0)
+    fd["BP_TOP3_OUTS_LAST_3D_DIFF"] = fd.get("HOME_BP_TOP3_OUTS_LAST_3D", 0.0) - fd.get("AWAY_BP_TOP3_OUTS_LAST_3D", 0.0)
 
     has_rolling = all(fd.get(f) is not None for f in feature_list)
     feat_vec = [fd.get(f) if fd.get(f) is not None else _feature_default(f) for f in feature_list]
@@ -1761,6 +1830,21 @@ if __name__ == "__main__":
     pkl_features = saved.get("features", FEATURES)
     print(f"// Model loaded ({len(pkl_features)} features)", file=sys.stderr)
 
+    # Spread model — loaded silently; never used for bet selection until USE_SPREAD_MODEL=True
+    spread_model = None
+    spread_model_path = MODEL_DIR / "spread_model.pkl"
+    if spread_model_path.exists():
+        try:
+            from mlb.scripts.spread_model import SpreadModel
+            spread_model = SpreadModel.load(spread_model_path)
+            print(
+                f"// Spread model loaded (trained through {spread_model.trained_through}, "
+                f"σ={spread_model.residual_std:.2f})",
+                file=sys.stderr,
+            )
+        except Exception as _e:
+            print(f"// Spread model load failed (non-fatal): {_e}", file=sys.stderr)
+
     output = {}
     report_rows = []
     for g in upcoming:
@@ -1826,12 +1910,76 @@ if __name__ == "__main__":
                     pick_odds      = other_odds
                     edge           = other_edge
 
+        # ── Spread model: compute cover probability for available lines ──────────
+        # Always computed when the spread model is loaded (for inspection/logging).
+        # Bet selection only switches to spread when USE_SPREAD_MODEL=True AND
+        # a SP is confirmed (no TBD starters). ML inference is never used here.
+        spread_cover_prob = None
+        spread_edge = None
+        spread_point = None
+        spread_odds = None
+        if spread_model and market and pick_side != "none":
+            _sp_confirmed = (
+                g.get("home_sp_name", "TBD") != "TBD"
+                and g.get("away_sp_name", "TBD") != "TBD"
+            )
+            if _sp_confirmed:
+                # Feature vector for the spread model (uses its own stored feature list)
+                _sm_feat_list = spread_model.features or pkl_features
+                _sm_vec, _, _ = build_features(g, team_state, pitchers, _sm_feat_list, bullpens, bullpen_usage)
+                # Home-perspective cover prob at the standard RL point
+                _rl_point = market.get("home_rl_point")
+                if _rl_point is not None:
+                    spread_cover_prob = round(spread_model.cover_prob(_sm_vec, float(_rl_point)), 4)
+                # Find best EV spread option across all available lines
+                _home_options = market.get("home_rl_options", [])
+                _away_options = market.get("away_rl_options", [])
+                if pick_side == "home" and _home_options:
+                    _best = spread_model.best_cover_ev(_sm_vec, _home_options)
+                    if _best:
+                        spread_edge = _best["edge"]
+                        spread_point = _best["line"]
+                        spread_odds = _best["odds"]
+                elif pick_side == "away" and _away_options:
+                    # Away cover = P(margin < line) = P(-margin > -line)
+                    # Invert feature perspective by negating predicted margin proxy:
+                    # cover_prob for away at point S = 1 - cover_prob for home at -S
+                    _best = None
+                    best_edge_val = -999.0
+                    for opt in _away_options:
+                        _line = float(opt["line"])
+                        _odds = float(opt["odds"])
+                        if _odds <= 1.0:
+                            continue
+                        # Away covers if margin < _line  →  P(margin < _line) = cover_prob(home, _line) via complement
+                        _away_prob = 1.0 - spread_model.cover_prob(_sm_vec, _line)
+                        _implied = 1.0 / _odds
+                        _ev = round(_away_prob - _implied, 4)
+                        if _ev > best_edge_val:
+                            best_edge_val = _ev
+                            _best = {"line": _line, "odds": _odds, "cover_prob": round(_away_prob, 4), "edge": _ev}
+                    if _best and _best["edge"] > 0:
+                        spread_edge = _best["edge"]
+                        spread_point = _best["line"]
+                        spread_odds = _best["odds"]
+
+        # ── Bet selection: ML only until spread model is validated ────────────
         # Run lines are shown for context only. Do not switch to a run-line bet
         # from moneyline probability; cover probability needs its own RL model.
         rl_pick_odds = None
         use_rl = False
         if market and pick_side != "none":
             rl_pick_odds = market["home_rl"] if pick_side == "home" else market["away_rl"]
+
+        # When USE_SPREAD_MODEL is enabled and spread model shows better EV than ML,
+        # switch to the spread market. TBD starter guard is already applied above.
+        if USE_SPREAD_MODEL and spread_edge is not None and spread_edge >= 0.03:
+            if spread_edge > edge:
+                use_rl = True
+                rl_pick_odds = spread_odds
+                # Re-stake using spread edge (staking ladder unchanged)
+                stake = stake_tier(spread_edge, BANKROLL_EUR)
+                edge = spread_edge
 
         stake = stake_tier(edge, BANKROLL_EUR)
 
@@ -1909,6 +2057,12 @@ if __name__ == "__main__":
             "gamesInSeries": g.get("games_in_series"),
             "homeRlOptions": market.get("home_rl_options", []) if market else [],
             "awayRlOptions": market.get("away_rl_options", []) if market else [],
+            # Spread model outputs (None when model not loaded or SP is TBD)
+            "spreadCoverProb": spread_cover_prob,
+            "spreadEdge": spread_edge,
+            "spreadPoint": spread_point,
+            "spreadOdds": spread_odds,
+            "spreadModelLoaded": spread_model is not None,
         }
 
         output[str(g["game_pk"])] = row

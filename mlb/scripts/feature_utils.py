@@ -57,7 +57,10 @@ BULLPEN_FEATURES = [
     "BP_IP_YESTERDAY",
     "BP_RELIEVERS_LAST_3D",
     "BP_RELIEVERS_YESTERDAY",
-    "BP_TOP_USED_YESTERDAY",
+    "BP_TOP_USED_YESTERDAY",       # legacy: top 3 by appearances used yesterday
+    "BP_TOP2_USED_YESTERDAY",      # top 2 by leverage score used yesterday
+    "BP_TOP2_BACKTOBACK",          # top 2 used on back-to-back days
+    "BP_TOP3_OUTS_LAST_3D",        # outs pitched by top 3 in last 3 days
 ]
 
 FEATURES = [
@@ -119,6 +122,12 @@ FEATURES = [
     "AWAY_BP_RELIEVERS_YESTERDAY",
     "HOME_BP_TOP_USED_YESTERDAY",
     "AWAY_BP_TOP_USED_YESTERDAY",
+    "HOME_BP_TOP2_USED_YESTERDAY",
+    "AWAY_BP_TOP2_USED_YESTERDAY",
+    "HOME_BP_TOP2_BACKTOBACK",
+    "AWAY_BP_TOP2_BACKTOBACK",
+    "HOME_BP_TOP3_OUTS_LAST_3D",
+    "AWAY_BP_TOP3_OUTS_LAST_3D",
     # Ballpark
     "BALLPARK_FACTOR",
     # Derived differentials
@@ -143,6 +152,9 @@ FEATURES = [
     "BP_RELIEVERS_LAST_3D_DIFF",
     "BP_RELIEVERS_YESTERDAY_DIFF",
     "BP_TOP_USED_YESTERDAY_DIFF",
+    "BP_TOP2_USED_YESTERDAY_DIFF",
+    "BP_TOP2_BACKTOBACK_DIFF",
+    "BP_TOP3_OUTS_LAST_3D_DIFF",
 ]
 
 
@@ -259,6 +271,9 @@ def neutral_bullpen_features() -> dict:
         "BP_RELIEVERS_LAST_3D": 0.0,
         "BP_RELIEVERS_YESTERDAY": 0.0,
         "BP_TOP_USED_YESTERDAY": 0.0,
+        "BP_TOP2_USED_YESTERDAY": 0.0,
+        "BP_TOP2_BACKTOBACK": 0.0,
+        "BP_TOP3_OUTS_LAST_3D": 0.0,
     }
 
 
@@ -309,6 +324,12 @@ def add_derived_diffs(df: pd.DataFrame) -> pd.DataFrame:
     df["BP_RELIEVERS_LAST_3D_DIFF"] = df["HOME_BP_RELIEVERS_LAST_3D"] - df["AWAY_BP_RELIEVERS_LAST_3D"]
     df["BP_RELIEVERS_YESTERDAY_DIFF"] = df["HOME_BP_RELIEVERS_YESTERDAY"] - df["AWAY_BP_RELIEVERS_YESTERDAY"]
     df["BP_TOP_USED_YESTERDAY_DIFF"] = df["HOME_BP_TOP_USED_YESTERDAY"] - df["AWAY_BP_TOP_USED_YESTERDAY"]
+    for col in ("BP_TOP2_USED_YESTERDAY", "BP_TOP2_BACKTOBACK", "BP_TOP3_OUTS_LAST_3D"):
+        home_col, away_col = f"HOME_{col}", f"AWAY_{col}"
+        if home_col in df.columns and away_col in df.columns:
+            df[f"{col}_DIFF"] = df[home_col] - df[away_col]
+        else:
+            df[f"{col}_DIFF"] = 0.0
     return df
 
 
@@ -356,5 +377,8 @@ def aggregate_bullpen_from_pitchers(pitchers: pd.DataFrame) -> pd.DataFrame:
             "bp_relievers_last_3d": 0.0,
             "bp_relievers_yesterday": 0.0,
             "bp_top_used_yesterday": 0.0,
+            "bp_top2_used_yesterday": 0.0,
+            "bp_top2_backtoback": 0.0,
+            "bp_top3_outs_last_3d": 0.0,
         })
     return pd.DataFrame(rows)

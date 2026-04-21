@@ -150,21 +150,59 @@ def _bullpen_quality_from_history(lines: list[dict]) -> dict:
     }
 
 
-def _bullpen_fatigue(team: str, game_date: pd.Timestamp, bullpen_daily: dict, top_relievers: dict) -> dict:
+def _leverage_score(stats: dict) -> float:
+    """Composite reliever leverage score: workload role + strikeout quality."""
+    k = float(stats.get("k", 0.0))
+    walks = float(stats.get("walks", 0.0))
+    bf = float(stats.get("bf", 0.0))
+    appearances = int(stats.get("appearances", 0))
+    k_bb_pct = (k - walks) / max(bf, 1.0)
+    return appearances * 0.5 + max(0.0, k_bb_pct) * 30.0
+
+
+def _bullpen_fatigue(team: str, game_date: pd.Timestamp, bullpen_daily: dict, top_leverages: dict) -> dict:
     rows = list(bullpen_daily.get(team, []))
     last3 = [r for r in rows if 1 <= (game_date - r["date"]).days <= 3]
     yday = [r for r in rows if (game_date - r["date"]).days == 1]
-    top_ids = top_relievers.get(team, set())
+    day2 = [r for r in rows if (game_date - r["date"]).days == 2]
+
+    lev = top_leverages.get(team, {})
+    top2_ids = lev.get("top2", set())
+    top3_ids = lev.get("top3", set())
+    legacy_top3_ids = lev.get("legacy_top3", set())
+
     quality = _bullpen_quality_from_history([
         line for r in rows for line in r.get("lines", [])
     ])
+
+    # Legacy: top 3 by appearance count used yesterday (preserves BP_TOP_USED_YESTERDAY)
+    bp_top_used_yesterday = 1 if any(legacy_top3_ids & set(r.get("pitcher_ids", [])) for r in yday) else 0
+
+    # New: top 2 by leverage score used yesterday
+    yday_pids = set(pid for r in yday for pid in r.get("pitcher_ids", []))
+    bp_top2_used_yesterday = 1 if top2_ids & yday_pids else 0
+
+    # New: top 2 used on back-to-back days (yesterday AND day before)
+    day2_pids = set(pid for r in day2 for pid in r.get("pitcher_ids", []))
+    bp_top2_backtoback = 1 if (top2_ids & yday_pids) and (top2_ids & day2_pids) else 0
+
+    # New: outs pitched by top 3 in last 3 days
+    top3_outs = 0.0
+    for r in last3:
+        for line in r.get("lines", []):
+            if int(line.get("pitcher_id", -1)) in top3_ids:
+                top3_outs += float(line.get("ip", 0.0) or 0.0) * 3.0
+
     return {
         **quality,
         "BP_IP_LAST_3D": round(sum(r["ip"] for r in last3), 3),
         "BP_IP_YESTERDAY": round(sum(r["ip"] for r in yday), 3),
         "BP_RELIEVERS_LAST_3D": sum(r["relievers"] for r in last3),
         "BP_RELIEVERS_YESTERDAY": sum(r["relievers"] for r in yday),
-        "BP_TOP_USED_YESTERDAY": 1 if any(top_ids & set(r.get("pitcher_ids", [])) for r in yday) else 0,
+        "BP_TOP_USED_YESTERDAY": bp_top_used_yesterday,
+        "BP_TOP2_USED_YESTERDAY": bp_top2_used_yesterday,
+        "BP_TOP2_BACKTOBACK": bp_top2_backtoback,
+        "BP_TOP3_OUTS_LAST_3D": round(top3_outs, 1),
     }
 
 
@@ -180,7 +218,9 @@ def rolling_stats(games: pd.DataFrame, pitcher_game_logs: pd.DataFrame | None = 
     pitcher_history: dict[int, dict] = defaultdict(_empty_pitcher_state)
     bullpen_daily: dict[str, deque] = defaultdict(lambda: deque(maxlen=14))
     reliever_counts: dict[str, dict[int, int]] = defaultdict(lambda: defaultdict(int))
-    top_relievers: dict[str, set[int]] = defaultdict(set)
+    # Per-reliever cumulative K, walks, bf, ip, appearances for leverage ranking
+    reliever_accum: dict[str, dict[int, dict]] = defaultdict(lambda: defaultdict(dict))
+    top_leverages: dict[str, dict] = defaultdict(lambda: {"top2": set(), "top3": set(), "legacy_top3": set()})
 
     if pitcher_game_logs is not None and not pitcher_game_logs.empty:
         plogs = pitcher_game_logs.copy()
@@ -227,8 +267,8 @@ def rolling_stats(games: pd.DataFrame, pitcher_game_logs: pd.DataFrame | None = 
         game_date = pd.to_datetime(g["game_date"])
         home_sp_features = _pitcher_snapshot(pitcher_history[int(g["home_sp_id"])]) if pd.notna(g.get("home_sp_id")) else _pitcher_snapshot({})
         away_sp_features = _pitcher_snapshot(pitcher_history[int(g["away_sp_id"])]) if pd.notna(g.get("away_sp_id")) else _pitcher_snapshot({})
-        home_bp = _bullpen_fatigue(g["home_team"], game_date, bullpen_daily, top_relievers)
-        away_bp = _bullpen_fatigue(g["away_team"], game_date, bullpen_daily, top_relievers)
+        home_bp = _bullpen_fatigue(g["home_team"], game_date, bullpen_daily, top_leverages)
+        away_bp = _bullpen_fatigue(g["away_team"], game_date, bullpen_daily, top_leverages)
 
         row = {
             "game_pk":      g["game_pk"],
@@ -292,9 +332,25 @@ def rolling_stats(games: pd.DataFrame, pitcher_game_logs: pd.DataFrame | None = 
                 if line.get("team") == team and int(line.get("is_starter", 0)) == 0
             ]
             for line in reliever_lines:
-                reliever_counts[team][int(line["pitcher_id"])] += 1
-            top_relievers[team] = {
-                pid for pid, _ in sorted(reliever_counts[team].items(), key=lambda item: item[1], reverse=True)[:3]
+                pid = int(line["pitcher_id"])
+                reliever_counts[team][pid] += 1
+                acc = reliever_accum[team][pid]
+                acc["k"] = acc.get("k", 0.0) + float(line.get("k", 0.0) or 0.0)
+                acc["walks"] = acc.get("walks", 0.0) + float(line.get("walks", 0.0) or 0.0)
+                acc["bf"] = acc.get("bf", 0.0) + float(line.get("batters_faced", 0.0) or 0.0)
+                acc["ip"] = acc.get("ip", 0.0) + float(line.get("ip", 0.0) or 0.0)
+                acc["appearances"] = acc.get("appearances", 0) + 1
+            # Legacy top 3 by appearance count
+            legacy_top3 = {
+                pid for pid, _ in sorted(reliever_counts[team].items(), key=lambda x: x[1], reverse=True)[:3]
+            }
+            # New: top 2 and top 3 by leverage score (K-BB% + workload)
+            scores = {pid: _leverage_score(s) for pid, s in reliever_accum[team].items()}
+            sorted_pids = sorted(scores, key=lambda p: scores[p], reverse=True)
+            top_leverages[team] = {
+                "top2": set(sorted_pids[:2]),
+                "top3": set(sorted_pids[:3]),
+                "legacy_top3": legacy_top3,
             }
             bullpen_daily[team].append({
                 "date": game_date,
