@@ -20,7 +20,7 @@
       },
       {
         "line": 1.0,
-        "odds": 1.88
+        "odds": 1.87
       },
       {
         "line": 1.5,
@@ -34,7 +34,7 @@
       },
       {
         "line": -1.0,
-        "odds": 1.93
+        "odds": 1.94
       },
       {
         "line": 2.5,
@@ -67,13 +67,13 @@
       },
       {
         "line": -1.0,
-        "odds": 2.18
+        "odds": 2.2
       }
     ],
     "home_rl_options": [
       {
         "line": 1.0,
-        "odds": 1.7
+        "odds": 1.68
       },
       {
         "line": 1.5,
@@ -110,7 +110,7 @@
       },
       {
         "line": -1.0,
-        "odds": 2.25
+        "odds": 2.23
       },
       {
         "line": 1.5,
@@ -124,7 +124,7 @@
       },
       {
         "line": 1.0,
-        "odds": 1.66
+        "odds": 1.67
       },
       {
         "line": 1.5,
@@ -139,8 +139,8 @@
   "STL_MIA": {
     "away_ml": 1.95,
     "home_ml": 1.83,
-    "away_rl": 1.49,
-    "home_rl": 2.79,
+    "away_rl": 1.51,
+    "home_rl": 2.75,
     "away_rl_point": 1.5,
     "home_rl_point": -1.5,
     "away_implied": 0.5128,
@@ -157,7 +157,7 @@
       },
       {
         "line": -1.5,
-        "odds": 2.7
+        "odds": 2.74
       },
       {
         "line": -1.0,
@@ -165,21 +165,21 @@
       },
       {
         "line": 1.5,
-        "odds": 1.49
+        "odds": 1.51
       }
     ],
     "home_rl_options": [
       {
         "line": -1.5,
-        "odds": 2.79
+        "odds": 2.75
       },
       {
         "line": 1.0,
-        "odds": 1.63
+        "odds": 1.64
       },
       {
         "line": 1.5,
-        "odds": 1.55
+        "odds": 1.53
       },
       {
         "line": 2.5,
@@ -212,7 +212,7 @@
       },
       {
         "line": 1.0,
-        "odds": 1.75
+        "odds": 1.72
       },
       {
         "line": 1.5,
@@ -226,7 +226,7 @@
       },
       {
         "line": -1.0,
-        "odds": 2.1
+        "odds": 2.15
       },
       {
         "line": 1.5,
@@ -284,7 +284,7 @@
   "BAL_KC": {
     "away_ml": 2.0,
     "home_ml": 1.8,
-    "away_rl": 1.55,
+    "away_rl": 1.56,
     "home_rl": 2.68,
     "away_rl_point": 1.5,
     "home_rl_point": -1.5,
@@ -302,15 +302,15 @@
       },
       {
         "line": -1.5,
-        "odds": 2.6
+        "odds": 2.63
       },
       {
         "line": 1.0,
-        "odds": 1.66
+        "odds": 1.67
       },
       {
         "line": 1.5,
-        "odds": 1.55
+        "odds": 1.56
       }
     ],
     "home_rl_options": [
@@ -320,7 +320,7 @@
       },
       {
         "line": -1.0,
-        "odds": 2.25
+        "odds": 2.23
       },
       {
         "line": 1.5,
@@ -335,8 +335,8 @@
   "PHI_CHC": {
     "away_ml": 2.05,
     "home_ml": 1.75,
-    "away_rl": 1.58,
-    "home_rl": 2.66,
+    "away_rl": 1.57,
+    "home_rl": 2.64,
     "away_rl_point": 1.5,
     "home_rl_point": -1.5,
     "away_implied": 0.4878,
@@ -357,13 +357,13 @@
       },
       {
         "line": 1.5,
-        "odds": 1.58
+        "odds": 1.57
       }
     ],
     "home_rl_options": [
       {
         "line": -1.5,
-        "odds": 2.66
+        "odds": 2.64
       },
       {
         "line": -1.0,
@@ -418,7 +418,7 @@
       },
       {
         "line": 1.5,
-        "odds": 1.54
+        "odds": 1.55
       },
       {
         "line": 2.5,
@@ -482,7 +482,7 @@
       },
       {
         "line": -1.5,
-        "odds": 2.6
+        "odds": 2.58
       },
       {
         "line": 1.0,
@@ -533,7 +533,7 @@
       },
       {
         "line": 1.0,
-        "odds": 1.88
+        "odds": 1.89
       },
       {
         "line": 1.5,
@@ -547,7 +547,7 @@
       },
       {
         "line": -1.0,
-        "odds": 1.93
+        "odds": 1.92
       },
       {
         "line": 2.5,
@@ -558,7 +558,7 @@
   "ATH_SEA": {
     "away_ml": 2.38,
     "home_ml": 1.6,
-    "away_rl": 1.67,
+    "away_rl": 1.68,
     "home_rl": 2.34,
     "away_rl_point": 1.5,
     "home_rl_point": -1.5,
@@ -580,7 +580,7 @@
       },
       {
         "line": 1.5,
-        "odds": 1.67
+        "odds": 1.68
       }
     ],
     "home_rl_options": [

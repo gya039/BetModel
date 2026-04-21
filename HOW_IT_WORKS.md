@@ -6,7 +6,7 @@
 
 The active moneyline model loaded by `predict_today.py` uses the feature list saved inside `mlb/models/moneyline_model.pkl` (76 features on the April 21 run). Current edge calculation uses no-vig moneyline probability when both sides are available, and stake sizing reads the live bankroll from `mlb/predictions/results_log.csv`.
 
-Run-line output is now evaluated on every eligible game because `USE_SPREAD_MODEL=True`, but production selection still requires the saved spread model to pass validation. The current spread model artifact loads and generates +EV candidates, but validation fails on ECE and favorite-cover sanity checks, so production picks and accumulators remain moneyline-only. The JSON and app expose RL diagnostic fields showing the best line, edge, cover probability, positive line count, validation status, and rejection reason.
+Run-line output is now evaluated on every eligible game because `USE_SPREAD_MODEL=True`. The spread model now uses corrected sportsbook spread signs and proper bucketed ECE validation. The current artifact validates, so RL can replace ML when the RL edge is at least 3% and beats the ML edge. The JSON and app expose RL diagnostic fields showing the best line, edge, cover probability, positive line count, validation status, and rejection reason.
 
 ## Overview
 
@@ -99,7 +99,7 @@ For each game:
 
 The model always picks the side with the higher model probability. If edge < 0, the market is sharper than the model on that side â€” pass.
 
-**Run Line logic:** A separate spread model evaluates the best available run-line / alternate-spread option for the picked side. The pipeline records the best RL line, odds, cover probability, edge, positive EV line count, validation status, and rejection reason. RL can only replace ML when `USE_SPREAD_MODEL=True`, the spread model passes validation, the RL edge is at least 3%, and the RL edge beats the ML edge. At the moment, `USE_SPREAD_MODEL=True` but validation fails, so RL remains diagnostic-only.
+**Run Line logic:** A separate spread model evaluates the best available run-line / alternate-spread option for the picked side. For sportsbook line `S`, home cover probability is `P(home margin > -S)` and away cover probability is `P(home margin < S)`. The pipeline records the best RL line, odds, cover probability, edge, positive EV line count, validation status, and rejection reason. RL can replace ML when `USE_SPREAD_MODEL=True`, the spread model passes validation, the RL edge is at least 3%, and the RL edge beats the ML edge.
 
 ### Step 7 â€” Apply stake tiers
 

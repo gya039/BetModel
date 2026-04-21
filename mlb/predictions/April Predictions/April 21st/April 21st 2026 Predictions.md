@@ -2,7 +2,7 @@
 
 **Bankroll:** EUR 618.96
 **Generated for:** 2026-04-21
-**Odds fetched:** 2026-04-21 17:43 ET
+**Odds fetched:** 2026-04-21 17:59 ET
 
 ━━━━━━━━━━━━━━━━━━━━━━━
 ⚾ GAME: Houston Astros vs Cleveland Guardians (Game 2 of 3)
@@ -29,15 +29,15 @@ Decision: SKIP
 🏟️  Home SP: Steven Matz (ERA 3.80 / WHIP 1.03) ⚠️ 21.3 IP
 ✈️  Away SP: Chase Burns (ERA 2.42 / WHIP 1.07) ⚠️ 22.3 IP
 
-📊 PICK: CIN Moneyline
+📊 PICK: CIN -2.5 (Run Line)
 💰 STAKE: 1.0% (EUR 6.00)
-📈 ODDS: 1.87
+📈 ODDS: 3.40  (ML was 1.87 — RL selected for better value)
 📐 RUN LINE: TB +1.5 @ 1.60  |  CIN -1.5 @ 2.58
 
-🔥 CONFIDENCE: 2
+🔥 CONFIDENCE: 3
 
 🧠 EDGE:
-- Model edge of 3.8% versus market implied probability.
+- Model edge of 5.2% versus market implied probability.
 - Away team has the better recent run differential.
 - Away starter has the better ERA matchup.
 
@@ -52,21 +52,20 @@ Decision: BET
 🏟️  Home SP: Chris Paddack (ERA 5.59 / WHIP 1.45) ⚠️ 19.3 IP
 ✈️  Away SP: Dustin May (ERA 6.98 / WHIP 1.60) ⚠️ 19.3 IP
 
-📊 PICK: MIA Moneyline
-💰 STAKE: 0.5% (EUR 3.00)
-📈 ODDS: 1.83
-📐 RUN LINE: MIA -1.5 @ 2.79  |  STL +1.5 @ 1.49
+📊 PICK: MIA -1.5 (Run Line)
+💰 STAKE: 1.0% (EUR 6.00)
+📈 ODDS: 2.75  (ML was 1.83 — RL selected for better value)
+📐 RUN LINE: MIA -1.5 @ 2.75  |  STL +1.5 @ 1.51
 
-🔥 CONFIDENCE: 1
+🔥 CONFIDENCE: 2
 
 🧠 EDGE:
-- Model edge of 2.5% versus market implied probability.
+- Model edge of 4.3% versus market implied probability.
 - Home starter has the better ERA matchup.
 - Home starter has the better WHIP profile.
 
 📉 RISKS:
 - Home SP has only 19.3 IP — ERA blended toward league average (4.5).
-⚠️  TIGHT EDGE: 2.5% — thin margin, treat as Tier C volume play. Check odds before placing.
 
 Decision: BET
 ━━━━━━━━━━━━━━━━━━━━━━━
@@ -168,7 +167,7 @@ Decision: BET
 📊 PICK: BAL Moneyline
 💰 STAKE: 2.0% (EUR 12.00)
 📈 ODDS: 2.00
-📐 RUN LINE: KC -1.5 @ 2.68  |  BAL +1.5 @ 1.55
+📐 RUN LINE: KC -1.5 @ 2.68  |  BAL +1.5 @ 1.56
 
 🔥 CONFIDENCE: 3
 
@@ -191,7 +190,7 @@ Decision: BET
 📊 PICK: PHI Moneyline
 💰 STAKE: 3.0% (EUR 19.00)
 📈 ODDS: 2.05
-📐 RUN LINE: CHC -1.5 @ 2.66  |  PHI +1.5 @ 1.58
+📐 RUN LINE: CHC -1.5 @ 2.64  |  PHI +1.5 @ 1.57
 
 🔥 CONFIDENCE: 7
 
@@ -279,7 +278,7 @@ Decision: BET
 📊 PICK: ATH Moneyline
 💰 STAKE: 4.0% (EUR 25.00)
 📈 ODDS: 2.38
-📐 RUN LINE: SEA -1.5 @ 2.34  |  ATH +1.5 @ 1.67
+📐 RUN LINE: SEA -1.5 @ 2.34  |  ATH +1.5 @ 1.68
 
 🔥 CONFIDENCE: 9
 
@@ -344,8 +343,8 @@ Decision: BET
 | Game | Pick | Odds | Stake % | Stake EUR | Return EUR | Profit EUR | Decision |
 |---|---|---:|---:|---:|---:|---:|---|
 | HOU @ CLE | SKIP - Missing odds data | N/A | 0% | EUR 0.00 | EUR 0.00 | EUR 0.00 | SKIP |
-| CIN @ TB | CIN Moneyline | 1.87 | 1.0% | EUR 6.00 | EUR 11.22 | EUR 5.22 | BET |
-| STL @ MIA | MIA Moneyline | 1.83 | 0.5% | EUR 3.00 | EUR 5.49 | EUR 2.49 | BET |
+| CIN @ TB | CIN -2.5 (Run Line) | 3.40 | 1.0% | EUR 6.00 | EUR 20.40 | EUR 14.40 | BET |
+| STL @ MIA | MIA -1.5 (Run Line) | 2.75 | 1.0% | EUR 6.00 | EUR 16.50 | EUR 10.50 | BET |
 | MIL @ DET | MIL Moneyline | 1.91 | 3.0% | EUR 19.00 | EUR 36.29 | EUR 17.29 | BET |
 | ATL @ WSH | SKIP - Missing odds data | N/A | 0% | EUR 0.00 | EUR 0.00 | EUR 0.00 | SKIP |
 | NYY @ BOS | NYY Moneyline | 2.00 | 3.0% | EUR 19.00 | EUR 38.00 | EUR 19.00 | BET |

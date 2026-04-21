@@ -1188,6 +1188,9 @@ def write_json_report(predictions: list[dict], target_date: str, accumulators: l
     payload = {
         "date": target_date,
         "bankroll": BANKROLL_EUR,
+        "snapshotKind": os.getenv("PREDICTION_SNAPSHOT_KIND", "morning"),
+        "snapshotNote": os.getenv("PREDICTION_SNAPSHOT_NOTE", ""),
+        "regenerated": os.getenv("PREDICTION_REGENERATED", "").lower() in {"1", "true", "yes", "on"},
         "predictions": predictions,
         "accumulators": accumulators or [],
     }

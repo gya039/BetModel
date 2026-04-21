@@ -194,7 +194,7 @@
 
 ## How the Model Picks â€” Quick Reference for GPT Context
 
-Current implementation note: this section supersedes older daily rows that mention automatic run-line switching. The pipeline now evaluates run-line candidates because `USE_SPREAD_MODEL=True`, but production RL selection remains blocked unless the separately trained spread model passes validation. April 21 diagnostics show +EV RL candidates exist, but ECE and favourite-cover sanity validation still fail.
+Current implementation note: this section supersedes older daily rows that mention automatic run-line switching. The pipeline now evaluates run-line candidates because `USE_SPREAD_MODEL=True`. After fixing spread sign handling and ECE calculation, the spread model validates and can select RL when the RL edge is >= 3% and beats the ML edge.
 
 The model never picks based on gut feel or narrative. Every pick follows this exact process:
 
@@ -208,7 +208,7 @@ The model never picks based on gut feel or narrative. Every pick follows this ex
 
 5. **Stake:** 1% of bankroll per 3â€“6% edge, scaling up to 5% for 20%+ edge. No bet below 3% edge.
 
-6. **Run line check:** A separate spread model evaluates available run-line / alternate-spread prices and writes diagnostic fields. RL can only be selected if the spread model validates, the RL edge is >= 3%, and it beats the ML edge. Current April 21 status: candidates found, validation failed, no RL production bets.
+6. **Run line check:** A separate spread model evaluates available run-line / alternate-spread prices and writes diagnostic fields. RL can be selected if the spread model validates, the RL edge is >= 3%, and it beats the ML edge. Current April 21 status: spread model loaded, validation passed, two RL bets selected on the regenerated file.
 
 **What the model is good at:** Identifying when the market misprice a team based on SP ERA differentials and recent team form together â€” especially when one SP is clearly dominant and the market hasn't adjusted enough.
 

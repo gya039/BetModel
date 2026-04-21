@@ -89,15 +89,13 @@
       "spreadBestOdds": null,
       "spreadPositiveLineCount": 0,
       "spreadOptionCount": 0,
-      "spreadSelectionAllowed": false,
+      "spreadSelectionAllowed": true,
       "spreadRejectionReason": "market_missing",
       "spreadModelLoaded": true,
-      "spreadModelStatus": "validation_failed",
-      "spreadModelValidationPassed": false,
+      "spreadModelStatus": "loaded",
+      "spreadModelValidationPassed": true,
       "spreadModelValidationReasons": [
-        "ECE at -1.5 too high: 0.4614 > 0.07",
-        "ECE at -2.5 too high: 0.3991 > 0.07",
-        "Favourite cover rate at -1.5 is 0.630 \u2014 outside [0.45, 0.6] (possible overfit or miscalibration)"
+        "All validation thresholds passed."
       ],
       "modelFeatures": {
         "HOME_L10_WIN_PCT": 0.5,
@@ -189,7 +187,7 @@
       "awayProb": 0.543,
       "pickSide": "away",
       "modelProb": 0.543,
-      "edge": 0.0377,
+      "edge": 0.052,
       "stake": {
         "pct": "1%",
         "pctValue": 1.0,
@@ -204,8 +202,8 @@
       "homeRl": 1.6,
       "awayRlPoint": -1.5,
       "homeRlPoint": 1.5,
-      "useRl": false,
-      "rlPickOdds": null,
+      "useRl": true,
+      "rlPickOdds": 3.4,
       "awayImplied": 0.5348,
       "homeImplied": 0.5236,
       "awayNoVig": 0.5053,
@@ -256,7 +254,7 @@
       "homeRlOptions": [
         {
           "line": 1.0,
-          "odds": 1.7
+          "odds": 1.68
         },
         {
           "line": 1.5,
@@ -278,10 +276,10 @@
         },
         {
           "line": -1.0,
-          "odds": 2.18
+          "odds": 2.2
         }
       ],
-      "spreadCoverProb": 0.3099,
+      "spreadCoverProb": 0.5686,
       "spreadEdge": 0.052,
       "spreadPoint": -2.5,
       "spreadOdds": 3.4,
@@ -291,15 +289,13 @@
       "spreadBestOdds": 3.4,
       "spreadPositiveLineCount": 3,
       "spreadOptionCount": 3,
-      "spreadSelectionAllowed": false,
-      "spreadRejectionReason": "model_validation_failed",
+      "spreadSelectionAllowed": true,
+      "spreadRejectionReason": "selected",
       "spreadModelLoaded": true,
-      "spreadModelStatus": "validation_failed",
-      "spreadModelValidationPassed": false,
+      "spreadModelStatus": "loaded",
+      "spreadModelValidationPassed": true,
       "spreadModelValidationReasons": [
-        "ECE at -1.5 too high: 0.4614 > 0.07",
-        "ECE at -2.5 too high: 0.3991 > 0.07",
-        "Favourite cover rate at -1.5 is 0.630 \u2014 outside [0.45, 0.6] (possible overfit or miscalibration)"
+        "All validation thresholds passed."
       ],
       "modelFeatures": {
         "HOME_L10_WIN_PCT": 0.7,
@@ -391,23 +387,23 @@
       "awayProb": 0.4586,
       "pickSide": "home",
       "modelProb": 0.5414,
-      "edge": 0.0255,
+      "edge": 0.0428,
       "stake": {
-        "pct": "0.5%",
-        "pctValue": 0.5,
-        "eur": 3.0,
-        "label": "micro",
-        "reportLabel": "0.5% (EUR 3.00)"
+        "pct": "1%",
+        "pctValue": 1.0,
+        "eur": 6.0,
+        "label": "low",
+        "reportLabel": "1% (EUR 6.00)"
       },
       "hasRolling": true,
       "awayMl": 1.95,
       "homeMl": 1.83,
-      "awayRl": 1.49,
-      "homeRl": 2.79,
+      "awayRl": 1.51,
+      "homeRl": 2.75,
       "awayRlPoint": 1.5,
       "homeRlPoint": -1.5,
-      "useRl": false,
-      "rlPickOdds": null,
+      "useRl": true,
+      "rlPickOdds": 2.75,
       "awayImplied": 0.5128,
       "homeImplied": 0.5464,
       "awayNoVig": 0.4841,
@@ -458,15 +454,15 @@
       "homeRlOptions": [
         {
           "line": -1.5,
-          "odds": 2.79
+          "odds": 2.75
         },
         {
           "line": 1.0,
-          "odds": 1.63
+          "odds": 1.64
         },
         {
           "line": 1.5,
-          "odds": 1.55
+          "odds": 1.53
         },
         {
           "line": 2.5,
@@ -480,7 +476,7 @@
         },
         {
           "line": -1.5,
-          "odds": 2.7
+          "odds": 2.74
         },
         {
           "line": -1.0,
@@ -488,28 +484,26 @@
         },
         {
           "line": 1.5,
-          "odds": 1.49
+          "odds": 1.51
         }
       ],
-      "spreadCoverProb": 0.6673,
-      "spreadEdge": 0.3088,
+      "spreadCoverProb": 0.4065,
+      "spreadEdge": 0.0428,
       "spreadPoint": -1.5,
-      "spreadOdds": 2.79,
-      "spreadBestCoverProb": 0.6673,
-      "spreadBestEdge": 0.3088,
+      "spreadOdds": 2.75,
+      "spreadBestCoverProb": 0.4065,
+      "spreadBestEdge": 0.0428,
       "spreadBestPoint": -1.5,
-      "spreadBestOdds": 2.79,
-      "spreadPositiveLineCount": 1,
+      "spreadBestOdds": 2.75,
+      "spreadPositiveLineCount": 3,
       "spreadOptionCount": 4,
-      "spreadSelectionAllowed": false,
-      "spreadRejectionReason": "model_validation_failed",
+      "spreadSelectionAllowed": true,
+      "spreadRejectionReason": "selected",
       "spreadModelLoaded": true,
-      "spreadModelStatus": "validation_failed",
-      "spreadModelValidationPassed": false,
+      "spreadModelStatus": "loaded",
+      "spreadModelValidationPassed": true,
       "spreadModelValidationReasons": [
-        "ECE at -1.5 too high: 0.4614 > 0.07",
-        "ECE at -2.5 too high: 0.3991 > 0.07",
-        "Favourite cover rate at -1.5 is 0.630 \u2014 outside [0.45, 0.6] (possible overfit or miscalibration)"
+        "All validation thresholds passed."
       ],
       "modelFeatures": {
         "HOME_L10_WIN_PCT": 0.3,
@@ -672,7 +666,7 @@
         },
         {
           "line": 1.0,
-          "odds": 1.66
+          "odds": 1.67
         },
         {
           "line": 1.5,
@@ -694,14 +688,14 @@
         },
         {
           "line": -1.0,
-          "odds": 2.25
+          "odds": 2.23
         },
         {
           "line": 1.5,
           "odds": 1.48
         }
       ],
-      "spreadCoverProb": 0.6068,
+      "spreadCoverProb": 0.3454,
       "spreadEdge": 0.0172,
       "spreadPoint": -1.5,
       "spreadOdds": 2.66,
@@ -711,15 +705,13 @@
       "spreadBestOdds": 2.66,
       "spreadPositiveLineCount": 2,
       "spreadOptionCount": 4,
-      "spreadSelectionAllowed": false,
+      "spreadSelectionAllowed": true,
       "spreadRejectionReason": "below_3pct_edge",
       "spreadModelLoaded": true,
-      "spreadModelStatus": "validation_failed",
-      "spreadModelValidationPassed": false,
+      "spreadModelStatus": "loaded",
+      "spreadModelValidationPassed": true,
       "spreadModelValidationReasons": [
-        "ECE at -1.5 too high: 0.4614 > 0.07",
-        "ECE at -2.5 too high: 0.3991 > 0.07",
-        "Favourite cover rate at -1.5 is 0.630 \u2014 outside [0.45, 0.6] (possible overfit or miscalibration)"
+        "All validation thresholds passed."
       ],
       "modelFeatures": {
         "HOME_L10_WIN_PCT": 0.8,
@@ -887,15 +879,13 @@
       "spreadBestOdds": null,
       "spreadPositiveLineCount": 0,
       "spreadOptionCount": 0,
-      "spreadSelectionAllowed": false,
+      "spreadSelectionAllowed": true,
       "spreadRejectionReason": "market_missing",
       "spreadModelLoaded": true,
-      "spreadModelStatus": "validation_failed",
-      "spreadModelValidationPassed": false,
+      "spreadModelStatus": "loaded",
+      "spreadModelValidationPassed": true,
       "spreadModelValidationReasons": [
-        "ECE at -1.5 too high: 0.4614 > 0.07",
-        "ECE at -2.5 too high: 0.3991 > 0.07",
-        "Favourite cover rate at -1.5 is 0.630 \u2014 outside [0.45, 0.6] (possible overfit or miscalibration)"
+        "All validation thresholds passed."
       ],
       "modelFeatures": {
         "HOME_L10_WIN_PCT": 0.5,
@@ -1058,7 +1048,7 @@
         },
         {
           "line": -1.0,
-          "odds": 2.1
+          "odds": 2.15
         },
         {
           "line": 1.5,
@@ -1080,32 +1070,30 @@
         },
         {
           "line": 1.0,
-          "odds": 1.75
+          "odds": 1.72
         },
         {
           "line": 1.5,
           "odds": 1.55
         }
       ],
-      "spreadCoverProb": 0.5949,
-      "spreadEdge": 0.053,
+      "spreadCoverProb": 0.3341,
+      "spreadEdge": 0.0431,
       "spreadPoint": 1.0,
-      "spreadOdds": 1.75,
+      "spreadOdds": 1.72,
       "spreadBestCoverProb": 0.6245,
-      "spreadBestEdge": 0.053,
+      "spreadBestEdge": 0.0431,
       "spreadBestPoint": 1.0,
-      "spreadBestOdds": 1.75,
+      "spreadBestOdds": 1.72,
       "spreadPositiveLineCount": 4,
       "spreadOptionCount": 4,
-      "spreadSelectionAllowed": false,
-      "spreadRejectionReason": "model_validation_failed",
+      "spreadSelectionAllowed": true,
+      "spreadRejectionReason": "ml_edge_better",
       "spreadModelLoaded": true,
-      "spreadModelStatus": "validation_failed",
-      "spreadModelValidationPassed": false,
+      "spreadModelStatus": "loaded",
+      "spreadModelValidationPassed": true,
       "spreadModelValidationReasons": [
-        "ECE at -1.5 too high: 0.4614 > 0.07",
-        "ECE at -2.5 too high: 0.3991 > 0.07",
-        "Favourite cover rate at -1.5 is 0.630 \u2014 outside [0.45, 0.6] (possible overfit or miscalibration)"
+        "All validation thresholds passed."
       ],
       "modelFeatures": {
         "HOME_L10_WIN_PCT": 0.5,
@@ -1289,7 +1277,7 @@
           "odds": 1.65
         }
       ],
-      "spreadCoverProb": 0.6769,
+      "spreadCoverProb": 0.4169,
       "spreadEdge": 0.0302,
       "spreadPoint": -2.5,
       "spreadOdds": 4.6,
@@ -1299,15 +1287,13 @@
       "spreadBestOdds": 4.6,
       "spreadPositiveLineCount": 2,
       "spreadOptionCount": 3,
-      "spreadSelectionAllowed": false,
-      "spreadRejectionReason": "model_validation_failed",
+      "spreadSelectionAllowed": true,
+      "spreadRejectionReason": "ml_edge_better",
       "spreadModelLoaded": true,
-      "spreadModelStatus": "validation_failed",
-      "spreadModelValidationPassed": false,
+      "spreadModelStatus": "loaded",
+      "spreadModelValidationPassed": true,
       "spreadModelValidationReasons": [
-        "ECE at -1.5 too high: 0.4614 > 0.07",
-        "ECE at -2.5 too high: 0.3991 > 0.07",
-        "Favourite cover rate at -1.5 is 0.630 \u2014 outside [0.45, 0.6] (possible overfit or miscalibration)"
+        "All validation thresholds passed."
       ],
       "modelFeatures": {
         "HOME_L10_WIN_PCT": 0.0,
@@ -1410,7 +1396,7 @@
       "hasRolling": true,
       "awayMl": 2.0,
       "homeMl": 1.8,
-      "awayRl": 1.55,
+      "awayRl": 1.56,
       "homeRl": 2.68,
       "awayRlPoint": 1.5,
       "homeRlPoint": -1.5,
@@ -1470,7 +1456,7 @@
         },
         {
           "line": -1.0,
-          "odds": 2.25
+          "odds": 2.23
         },
         {
           "line": 1.5,
@@ -1488,18 +1474,18 @@
         },
         {
           "line": -1.5,
-          "odds": 2.6
+          "odds": 2.63
         },
         {
           "line": 1.0,
-          "odds": 1.66
+          "odds": 1.67
         },
         {
           "line": 1.5,
-          "odds": 1.55
+          "odds": 1.56
         }
       ],
-      "spreadCoverProb": 0.6538,
+      "spreadCoverProb": 0.3923,
       "spreadEdge": null,
       "spreadPoint": null,
       "spreadOdds": null,
@@ -1509,15 +1495,13 @@
       "spreadBestOdds": 3.4,
       "spreadPositiveLineCount": 0,
       "spreadOptionCount": 4,
-      "spreadSelectionAllowed": false,
+      "spreadSelectionAllowed": true,
       "spreadRejectionReason": "no_positive_ev",
       "spreadModelLoaded": true,
-      "spreadModelStatus": "validation_failed",
-      "spreadModelValidationPassed": false,
+      "spreadModelStatus": "loaded",
+      "spreadModelValidationPassed": true,
       "spreadModelValidationReasons": [
-        "ECE at -1.5 too high: 0.4614 > 0.07",
-        "ECE at -2.5 too high: 0.3991 > 0.07",
-        "Favourite cover rate at -1.5 is 0.630 \u2014 outside [0.45, 0.6] (possible overfit or miscalibration)"
+        "All validation thresholds passed."
       ],
       "modelFeatures": {
         "HOME_L10_WIN_PCT": 0.2,
@@ -1620,8 +1604,8 @@
       "hasRolling": true,
       "awayMl": 2.05,
       "homeMl": 1.75,
-      "awayRl": 1.58,
-      "homeRl": 2.66,
+      "awayRl": 1.57,
+      "homeRl": 2.64,
       "awayRlPoint": 1.5,
       "homeRlPoint": -1.5,
       "useRl": false,
@@ -1676,7 +1660,7 @@
       "homeRlOptions": [
         {
           "line": -1.5,
-          "odds": 2.66
+          "odds": 2.64
         },
         {
           "line": -1.0,
@@ -1698,10 +1682,10 @@
         },
         {
           "line": 1.5,
-          "odds": 1.58
+          "odds": 1.57
         }
       ],
-      "spreadCoverProb": 0.7133,
+      "spreadCoverProb": 0.4578,
       "spreadEdge": null,
       "spreadPoint": null,
       "spreadOdds": null,
@@ -1711,15 +1695,13 @@
       "spreadBestOdds": 3.5,
       "spreadPositiveLineCount": 0,
       "spreadOptionCount": 3,
-      "spreadSelectionAllowed": false,
+      "spreadSelectionAllowed": true,
       "spreadRejectionReason": "no_positive_ev",
       "spreadModelLoaded": true,
-      "spreadModelStatus": "validation_failed",
-      "spreadModelValidationPassed": false,
+      "spreadModelStatus": "loaded",
+      "spreadModelValidationPassed": true,
       "spreadModelValidationReasons": [
-        "ECE at -1.5 too high: 0.4614 > 0.07",
-        "ECE at -2.5 too high: 0.3991 > 0.07",
-        "Favourite cover rate at -1.5 is 0.630 \u2014 outside [0.45, 0.6] (possible overfit or miscalibration)"
+        "All validation thresholds passed."
       ],
       "modelFeatures": {
         "HOME_L10_WIN_PCT": 0.7,
@@ -1886,7 +1868,7 @@
         },
         {
           "line": 1.5,
-          "odds": 1.54
+          "odds": 1.55
         },
         {
           "line": 2.5,
@@ -1911,7 +1893,7 @@
           "odds": 1.49
         }
       ],
-      "spreadCoverProb": 0.6215,
+      "spreadCoverProb": 0.3596,
       "spreadEdge": 0.027,
       "spreadPoint": -2.5,
       "spreadOdds": 3.7,
@@ -1921,15 +1903,13 @@
       "spreadBestOdds": 3.7,
       "spreadPositiveLineCount": 2,
       "spreadOptionCount": 4,
-      "spreadSelectionAllowed": false,
+      "spreadSelectionAllowed": true,
       "spreadRejectionReason": "below_3pct_edge",
       "spreadModelLoaded": true,
-      "spreadModelStatus": "validation_failed",
-      "spreadModelValidationPassed": false,
+      "spreadModelStatus": "loaded",
+      "spreadModelValidationPassed": true,
       "spreadModelValidationReasons": [
-        "ECE at -1.5 too high: 0.4614 > 0.07",
-        "ECE at -2.5 too high: 0.3991 > 0.07",
-        "Favourite cover rate at -1.5 is 0.630 \u2014 outside [0.45, 0.6] (possible overfit or miscalibration)"
+        "All validation thresholds passed."
       ],
       "modelFeatures": {
         "HOME_L10_WIN_PCT": 0.4,
@@ -2105,7 +2085,7 @@
           "odds": 2.06
         }
       ],
-      "spreadCoverProb": 0.3516,
+      "spreadCoverProb": 0.6133,
       "spreadEdge": null,
       "spreadPoint": null,
       "spreadOdds": null,
@@ -2115,15 +2095,13 @@
       "spreadBestOdds": 2.6,
       "spreadPositiveLineCount": 0,
       "spreadOptionCount": 2,
-      "spreadSelectionAllowed": false,
+      "spreadSelectionAllowed": true,
       "spreadRejectionReason": "no_positive_ev",
       "spreadModelLoaded": true,
-      "spreadModelStatus": "validation_failed",
-      "spreadModelValidationPassed": false,
+      "spreadModelStatus": "loaded",
+      "spreadModelValidationPassed": true,
       "spreadModelValidationReasons": [
-        "ECE at -1.5 too high: 0.4614 > 0.07",
-        "ECE at -2.5 too high: 0.3991 > 0.07",
-        "Favourite cover rate at -1.5 is 0.630 \u2014 outside [0.45, 0.6] (possible overfit or miscalibration)"
+        "All validation thresholds passed."
       ],
       "modelFeatures": {
         "HOME_L10_WIN_PCT": 0.3,
@@ -2304,7 +2282,7 @@
         },
         {
           "line": -1.5,
-          "odds": 2.6
+          "odds": 2.58
         },
         {
           "line": 1.0,
@@ -2315,25 +2293,23 @@
           "odds": 1.5
         }
       ],
-      "spreadCoverProb": 0.6182,
+      "spreadCoverProb": 0.3564,
       "spreadEdge": null,
       "spreadPoint": null,
       "spreadOdds": null,
       "spreadBestCoverProb": 0.3818,
-      "spreadBestEdge": -0.0029,
+      "spreadBestEdge": -0.0058,
       "spreadBestPoint": -1.5,
-      "spreadBestOdds": 2.6,
+      "spreadBestOdds": 2.58,
       "spreadPositiveLineCount": 0,
       "spreadOptionCount": 4,
-      "spreadSelectionAllowed": false,
+      "spreadSelectionAllowed": true,
       "spreadRejectionReason": "no_positive_ev",
       "spreadModelLoaded": true,
-      "spreadModelStatus": "validation_failed",
-      "spreadModelValidationPassed": false,
+      "spreadModelStatus": "loaded",
+      "spreadModelValidationPassed": true,
       "spreadModelValidationReasons": [
-        "ECE at -1.5 too high: 0.4614 > 0.07",
-        "ECE at -2.5 too high: 0.3991 > 0.07",
-        "Favourite cover rate at -1.5 is 0.630 \u2014 outside [0.45, 0.6] (possible overfit or miscalibration)"
+        "All validation thresholds passed."
       ],
       "modelFeatures": {
         "HOME_L10_WIN_PCT": 0.4,
@@ -2436,7 +2412,7 @@
       "hasRolling": true,
       "awayMl": 2.38,
       "homeMl": 1.6,
-      "awayRl": 1.67,
+      "awayRl": 1.68,
       "homeRl": 2.34,
       "awayRlPoint": 1.5,
       "homeRlPoint": -1.5,
@@ -2514,10 +2490,10 @@
         },
         {
           "line": 1.5,
-          "odds": 1.67
+          "odds": 1.68
         }
       ],
-      "spreadCoverProb": 0.5116,
+      "spreadCoverProb": 0.2611,
       "spreadEdge": 0.1859,
       "spreadPoint": 1.0,
       "spreadOdds": 1.94,
@@ -2527,15 +2503,13 @@
       "spreadBestOdds": 1.94,
       "spreadPositiveLineCount": 3,
       "spreadOptionCount": 3,
-      "spreadSelectionAllowed": false,
-      "spreadRejectionReason": "model_validation_failed",
+      "spreadSelectionAllowed": true,
+      "spreadRejectionReason": "ml_edge_better",
       "spreadModelLoaded": true,
-      "spreadModelStatus": "validation_failed",
-      "spreadModelValidationPassed": false,
+      "spreadModelStatus": "loaded",
+      "spreadModelValidationPassed": true,
       "spreadModelValidationReasons": [
-        "ECE at -1.5 too high: 0.4614 > 0.07",
-        "ECE at -2.5 too high: 0.3991 > 0.07",
-        "Favourite cover rate at -1.5 is 0.630 \u2014 outside [0.45, 0.6] (possible overfit or miscalibration)"
+        "All validation thresholds passed."
       ],
       "modelFeatures": {
         "HOME_L10_WIN_PCT": 0.5,
@@ -2698,7 +2672,7 @@
         },
         {
           "line": -1.0,
-          "odds": 1.93
+          "odds": 1.92
         },
         {
           "line": 2.5,
@@ -2712,32 +2686,30 @@
         },
         {
           "line": 1.0,
-          "odds": 1.88
+          "odds": 1.89
         },
         {
           "line": 1.5,
           "odds": 1.69
         }
       ],
-      "spreadCoverProb": 0.667,
-      "spreadEdge": 0.2433,
-      "spreadPoint": -1.5,
-      "spreadOdds": 2.36,
-      "spreadBestCoverProb": 0.667,
-      "spreadBestEdge": 0.2433,
+      "spreadCoverProb": 0.4062,
+      "spreadEdge": null,
+      "spreadPoint": null,
+      "spreadOdds": null,
+      "spreadBestCoverProb": 0.4062,
+      "spreadBestEdge": -0.0175,
       "spreadBestPoint": -1.5,
       "spreadBestOdds": 2.36,
-      "spreadPositiveLineCount": 2,
+      "spreadPositiveLineCount": 0,
       "spreadOptionCount": 3,
-      "spreadSelectionAllowed": false,
-      "spreadRejectionReason": "model_validation_failed",
+      "spreadSelectionAllowed": true,
+      "spreadRejectionReason": "no_positive_ev",
       "spreadModelLoaded": true,
-      "spreadModelStatus": "validation_failed",
-      "spreadModelValidationPassed": false,
+      "spreadModelStatus": "loaded",
+      "spreadModelValidationPassed": true,
       "spreadModelValidationReasons": [
-        "ECE at -1.5 too high: 0.4614 > 0.07",
-        "ECE at -2.5 too high: 0.3991 > 0.07",
-        "Favourite cover rate at -1.5 is 0.630 \u2014 outside [0.45, 0.6] (possible overfit or miscalibration)"
+        "All validation thresholds passed."
       ],
       "modelFeatures": {
         "HOME_L10_WIN_PCT": 0.7,
@@ -2913,7 +2885,7 @@
           "odds": 2.04
         }
       ],
-      "spreadCoverProb": 0.2468,
+      "spreadCoverProb": 0.4937,
       "spreadEdge": 0.0179,
       "spreadPoint": -2.5,
       "spreadOdds": 2.5,
@@ -2923,15 +2895,13 @@
       "spreadBestOdds": 2.5,
       "spreadPositiveLineCount": 2,
       "spreadOptionCount": 2,
-      "spreadSelectionAllowed": false,
+      "spreadSelectionAllowed": true,
       "spreadRejectionReason": "below_3pct_edge",
       "spreadModelLoaded": true,
-      "spreadModelStatus": "validation_failed",
-      "spreadModelValidationPassed": false,
+      "spreadModelStatus": "loaded",
+      "spreadModelValidationPassed": true,
       "spreadModelValidationReasons": [
-        "ECE at -1.5 too high: 0.4614 > 0.07",
-        "ECE at -2.5 too high: 0.3991 > 0.07",
-        "Favourite cover rate at -1.5 is 0.630 \u2014 outside [0.45, 0.6] (possible overfit or miscalibration)"
+        "All validation thresholds passed."
       ],
       "modelFeatures": {
         "HOME_L10_WIN_PCT": 0.5,
@@ -3259,5 +3229,8 @@
       "potential_return": 245.64,
       "combined_ev": 2.8881
     }
-  ]
+  ],
+  "snapshotKind": "regenerated",
+  "snapshotNote": "Regenerated after original morning odds lock to include corrected run-line model diagnostics.",
+  "regenerated": true
 }

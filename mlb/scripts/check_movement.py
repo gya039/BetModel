@@ -29,6 +29,7 @@ sys.path.append(str(Path(__file__).parent.parent.parent))
 from mlb.scripts.odds_utils import (
     best_moneyline,
     best_spread,
+    collect_spread_options,
     no_vig_probs,
     standard_run_line_points,
 )
@@ -161,6 +162,8 @@ def fetch_current_odds(target_date: str) -> dict:
         books = g.get("bookmakers", [])
         home_ml, _ = best_moneyline(books, home_full)
         away_ml, _ = best_moneyline(books, away_full)
+        home_rl_options = collect_spread_options(books, [], home_full)
+        away_rl_options = collect_spread_options(books, [], away_full)
         home_no_vig, away_no_vig = no_vig_probs(home_ml, away_ml)
         if home_ml and away_ml:
             home_rl_point, away_rl_point = standard_run_line_points(home_ml, away_ml)
@@ -178,6 +181,8 @@ def fetch_current_odds(target_date: str) -> dict:
             "away_rl_point": away_rl_point,
             "home_no_vig": home_no_vig,
             "away_no_vig": away_no_vig,
+            "home_rl_options": home_rl_options,
+            "away_rl_options": away_rl_options,
             "book_count": len(books),
         }
 
@@ -346,6 +351,27 @@ def movement_arrow(old: float, new: float, pick_side_is_this_team: bool) -> str:
             return f"  ↑ {diff:+.2f}  (opposition drifting — positive for your pick)"
 
 
+def current_pick_odds_for_row(row: dict, current_odds: dict | None) -> float | None:
+    """Return current odds for the exact selected market in row."""
+    if not current_odds or row.get("pickSide") not in ("home", "away"):
+        return None
+    pick_side = row.get("pickSide")
+    if not row.get("useRl"):
+        return current_odds.get("home_ml") if pick_side == "home" else current_odds.get("away_ml")
+
+    point = row.get("spreadPoint")
+    options = current_odds.get("home_rl_options", []) if pick_side == "home" else current_odds.get("away_rl_options", [])
+    if point is not None:
+        for opt in options:
+            if float(opt.get("line")) == float(point):
+                return opt.get("odds")
+    return current_odds.get("home_rl") if pick_side == "home" else current_odds.get("away_rl")
+
+
+def selected_pick_odds(row: dict) -> float | None:
+    return row.get("rlPickOdds") if row.get("useRl") else row.get("pickOdds")
+
+
 def stake_tier(edge: float, bankroll: float) -> dict:
     if edge < 0.01:
         return {"pct": "0%", "pctValue": 0, "eur": 0.0, "label": "pass", "reportLabel": "PASS"}
@@ -392,11 +418,189 @@ def current_updated_bankroll(predictions_dir: Path) -> float:
     return 500.0
 
 
+def build_spread_reprice_context(target_date: str) -> dict | None:
+    """Build the feature context needed to reprice run lines from updated odds."""
+    try:
+        sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+        from mlb.scripts.predict_today import (
+            MODEL_DIR,
+            build_features,
+            build_team_state,
+            fetch_bullpen_stats,
+            fetch_completed,
+            fetch_pitcher_stats,
+            fetch_recent_bullpen_usage,
+            fetch_upcoming,
+        )
+        from mlb.scripts.spread_model import SpreadModel
+
+        spread_path = MODEL_DIR / "spread_model.pkl"
+        if not spread_path.exists():
+            print("  [RL] Spread model missing; updated odds will stay ML-only.", file=sys.stderr)
+            return None
+        spread_model = SpreadModel.load(spread_path)
+        if getattr(spread_model, "validation_passed", None) is not True:
+            print(f"  [RL] Spread model not validated: {spread_model.validation_reasons}", file=sys.stderr)
+            return None
+
+        yesterday = (datetime.strptime(target_date, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
+        completed = fetch_completed(yesterday)
+        team_state = build_team_state(completed)
+        pitchers = fetch_pitcher_stats()
+        bullpens = fetch_bullpen_stats(pitchers)
+        bullpen_usage = fetch_recent_bullpen_usage(completed, pitchers, target_date)
+        for team, usage in bullpen_usage.items():
+            bullpens.setdefault(team, {}).update(usage)
+        upcoming = fetch_upcoming(target_date)
+        games_by_pk = {g["game_pk"]: g for g in upcoming}
+        games_by_pair = {(g["home_team"], g["away_team"]): g for g in upcoming}
+
+        return {
+            "model": spread_model,
+            "build_features": build_features,
+            "team_state": team_state,
+            "pitchers": pitchers,
+            "bullpens": bullpens,
+            "bullpen_usage": bullpen_usage,
+            "games_by_pk": games_by_pk,
+            "games_by_pair": games_by_pair,
+        }
+    except Exception as exc:
+        print(f"  [RL] Spread reprice context unavailable: {exc}", file=sys.stderr)
+        return None
+
+
+def _reset_spread_fields(row: dict, reason: str) -> None:
+    row.update({
+        "useRl": False,
+        "rlPickOdds": None,
+        "spreadCoverProb": None,
+        "spreadEdge": None,
+        "spreadPoint": None,
+        "spreadOdds": None,
+        "spreadBestCoverProb": None,
+        "spreadBestEdge": None,
+        "spreadBestPoint": None,
+        "spreadBestOdds": None,
+        "spreadPositiveLineCount": 0,
+        "spreadOptionCount": 0,
+        "spreadSelectionAllowed": False,
+        "spreadRejectionReason": reason,
+    })
+
+
+def reprice_updated_run_line(
+    row: dict,
+    current_odds: dict | None,
+    spread_context: dict | None,
+    bankroll: float,
+    game_state_map: dict[int, str] | None = None,
+) -> dict:
+    """Apply the validated spread model to an updated odds row."""
+    updated = dict(row)
+    if game_state_map is not None:
+        state = game_state_map.get(updated.get("gamePk"), "NOT_STARTED")
+        if state in ("LIVE", "FINAL"):
+            return updated
+
+    if not spread_context:
+        _reset_spread_fields(updated, "spread_context_missing")
+        return updated
+
+    spread_model = spread_context["model"]
+    updated["spreadModelLoaded"] = True
+    updated["spreadModelStatus"] = "loaded"
+    updated["spreadModelValidationPassed"] = getattr(spread_model, "validation_passed", None)
+    updated["spreadModelValidationReasons"] = getattr(spread_model, "validation_reasons", [])
+
+    pick_side = updated.get("pickSide", "none")
+    if pick_side == "none":
+        _reset_spread_fields(updated, "no_ml_pick_side")
+        updated["spreadSelectionAllowed"] = True
+        return updated
+    if updated.get("homeSpName", "TBD") == "TBD" or updated.get("awaySpName", "TBD") == "TBD":
+        _reset_spread_fields(updated, "tbd_starting_pitcher")
+        updated["spreadSelectionAllowed"] = True
+        return updated
+    if not current_odds:
+        _reset_spread_fields(updated, "market_missing")
+        updated["spreadSelectionAllowed"] = True
+        return updated
+
+    game = spread_context["games_by_pk"].get(updated.get("gamePk")) or spread_context["games_by_pair"].get(
+        (updated.get("homeAbbr"), updated.get("awayAbbr"))
+    )
+    if not game:
+        _reset_spread_fields(updated, "schedule_context_missing")
+        updated["spreadSelectionAllowed"] = True
+        return updated
+
+    feat_list = spread_model.features or []
+    feat_vec, _, _ = spread_context["build_features"](
+        game,
+        spread_context["team_state"],
+        spread_context["pitchers"],
+        feat_list,
+        spread_context["bullpens"],
+        spread_context["bullpen_usage"],
+    )
+
+    if current_odds.get("home_rl_point") is not None:
+        updated["spreadCoverProb"] = round(spread_model.cover_prob(feat_vec, float(current_odds["home_rl_point"])), 4)
+    else:
+        updated["spreadCoverProb"] = None
+
+    options = current_odds.get("home_rl_options", []) if pick_side == "home" else current_odds.get("away_rl_options", [])
+    if pick_side == "home":
+        best = spread_model.best_cover_ev(feat_vec, options, return_diagnostics=True)
+    else:
+        best = spread_model.best_away_cover_ev(feat_vec, options, return_diagnostics=True)
+
+    updated["spreadSelectionAllowed"] = True
+    if not best:
+        _reset_spread_fields(updated, "no_valid_spread_options")
+        updated["spreadSelectionAllowed"] = True
+        return updated
+
+    updated.update({
+        "spreadBestCoverProb": best["cover_prob"],
+        "spreadBestEdge": best["edge"],
+        "spreadBestPoint": best["line"],
+        "spreadBestOdds": best["odds"],
+        "spreadPositiveLineCount": best["positive_line_count"],
+        "spreadOptionCount": best["option_count"],
+        "spreadRejectionReason": best["rejection_reason"],
+    })
+    if best["edge"] > 0:
+        updated["spreadEdge"] = best["edge"]
+        updated["spreadPoint"] = best["line"]
+        updated["spreadOdds"] = best["odds"]
+    else:
+        updated["spreadEdge"] = None
+        updated["spreadPoint"] = None
+        updated["spreadOdds"] = None
+
+    ml_edge = float(updated.get("edge", 0.0) or 0.0)
+    if best["edge"] >= 0.03 and best["edge"] > ml_edge:
+        updated["useRl"] = True
+        updated["rlPickOdds"] = best["odds"]
+        updated["edge"] = best["edge"]
+        updated["stake"] = stake_tier(best["edge"], bankroll)
+        updated["spreadRejectionReason"] = "selected"
+    else:
+        updated["useRl"] = False
+        updated["rlPickOdds"] = None
+        if best["edge"] >= 0.03:
+            updated["spreadRejectionReason"] = "ml_edge_better"
+    return updated
+
+
 def generate_updated_predictions(
     predictions: list[dict],
     current_odds_dict: dict,
     bankroll: float,
     game_state_map: dict[int, str] | None = None,
+    target_date: str | None = None,
 ) -> list[dict]:
     """
     Re-run edge calculations using current pregame odds.
@@ -406,6 +610,7 @@ def generate_updated_predictions(
     pitching changes) and must never be treated as market signals.
     """
     updated = []
+    spread_context = build_spread_reprice_context(target_date) if target_date else None
     for p in predictions:
         home = p["homeAbbr"]
         away = p["awayAbbr"]
@@ -500,6 +705,13 @@ def generate_updated_predictions(
 
         updated.append(updated_p)
 
+    if spread_context:
+        repriced = []
+        for row in updated:
+            cur = current_odds_dict.get((row.get("homeAbbr"), row.get("awayAbbr")))
+            repriced.append(reprice_updated_run_line(row, cur, spread_context, bankroll, game_state_map))
+        updated = repriced
+
     return updated
 
 
@@ -544,7 +756,7 @@ def save_updated_predictions(original_path: Path, predictions: list, bankroll: f
             sp = p.get("spreadPoint")
             sp_str = f"{sp:+g}" if sp is not None else "-1.5"
             pick_label = f"{team} {sp_str}" if use_rl else f"{team} ML"
-        odds  = p.get("pickOdds") or ""
+        odds  = (p.get("rlPickOdds") if use_rl else p.get("pickOdds")) or ""
         edge  = p.get("edge", 0.0)
         stake = p.get("stake", {})
         dec   = "BET" if stake.get("eur", 0) > 0 and edge >= 0.01 else "SKIP"
@@ -811,7 +1023,7 @@ def main():
                 _sp = p.get("spreadPoint")
                 _sp_str = f" {_sp:+g}" if _sp is not None else " -1.5"
                 pick_label = (home if pick_side == "home" else away) + (_sp_str if use_rl else " ML")
-            stored_odds = p.get("pickOdds")
+            stored_odds = p.get("rlPickOdds") if use_rl else p.get("pickOdds")
             stored_str = f"{stored_odds:.2f}" if stored_odds else "  —  "
 
             if section_state == "LIVE":
@@ -843,10 +1055,7 @@ def main():
                 movement_str = "  — (not in current feed)"
                 now_str = "  —  "
             else:
-                if use_rl:
-                    cur_odds = cur["home_rl"] if pick_side == "home" else cur["away_rl"]
-                else:
-                    cur_odds = cur["home_ml"] if pick_side == "home" else cur["away_ml"]
+                cur_odds = current_pick_odds_for_row(p, cur)
                 if cur_odds is None:
                     movement_str = "  — (no current odds for this market)"
                     now_str = "  —  "
@@ -1043,7 +1252,7 @@ def main():
     print("  Generating updated predictions with current odds...")
     updated_bankroll = current_updated_bankroll(predictions_dir)
     updated_preds = generate_updated_predictions(
-        base_predictions, current_odds, updated_bankroll, game_state_map
+        base_predictions, current_odds, updated_bankroll, game_state_map, target_date
     )
     out_json, out_md, out_xlsx = save_updated_predictions(json_path, updated_preds, updated_bankroll, target_date)
 
@@ -1064,7 +1273,7 @@ def main():
     shared_pks = set(orig_by_pk) & set(upd_by_pk)
     odds_moved = [
         pk for pk in shared_pks
-        if orig_by_pk[pk].get("pickOdds") != upd_by_pk[pk].get("pickOdds")
+        if selected_pick_odds(orig_by_pk[pk]) != selected_pick_odds(upd_by_pk[pk])
     ]
     edge_moved = [
         pk for pk in shared_pks
@@ -1084,7 +1293,7 @@ def main():
             away      = p["awayAbbr"]
             pick_side = p.get("pickSide", "none")
             pick_team = home if pick_side == "home" else away
-            odds      = p.get("pickOdds")
+            odds      = p.get("rlPickOdds") if p.get("useRl") else p.get("pickOdds")
             edge      = p.get("edge", 0.0)
             stake     = p.get("stake", {})
             home_sp   = p.get("homeSpName", "TBD")
@@ -1097,7 +1306,12 @@ def main():
             ip_note = lambda sp, ip: f" ({ip:.1f} IP)" if ip and ip < 30 else ""
 
             print(f"\n  {away} @ {home}")
-            print(f"    Pick  : {pick_team} ML")
+            if p.get("useRl"):
+                _sp = p.get("spreadPoint")
+                _sp_label = f"{_sp:+g}" if _sp is not None else "-1.5"
+                print(f"    Pick  : {pick_team} {_sp_label}")
+            else:
+                print(f"    Pick  : {pick_team} ML")
             print(f"    Odds  : {odds:.2f}" if odds else "    Odds  : —")
             print(f"    Edge  : {edge*100:.1f}%")
             print(f"    Stake : EUR {stake.get('eur', 0):.2f}  ({stake.get('pct','0%')})")
@@ -1118,7 +1332,7 @@ def main():
         print(f"\n  FROZEN PICKS (live games — morning evaluation preserved):")
         for p in frozen_live:
             home, away = p["homeAbbr"], p["awayAbbr"]
-            stored = p.get("pickOdds")
+            stored = p.get("rlPickOdds") if p.get("useRl") else p.get("pickOdds")
             odds_str = f" @ {stored:.2f}" if stored else ""
             print(f"    🔴 {away} @ {home}  — game in progress, pick unchanged{odds_str}")
 
