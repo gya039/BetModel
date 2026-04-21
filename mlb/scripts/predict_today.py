@@ -61,6 +61,13 @@ from mlb.scripts.feature_utils import (
     safe_float,
     parse_ip,
 )
+from mlb.scripts.odds_utils import (
+    best_moneyline,
+    best_spread,
+    collect_spread_options as collect_filtered_spread_options,
+    no_vig_probs,
+    standard_run_line_points,
+)
 
 MODEL_DIR = Path(__file__).parent.parent / "models"
 PREDICTIONS_DIR = Path(__file__).parent.parent / "predictions"
@@ -896,9 +903,9 @@ def write_markdown_report(predictions: list[dict], target_date: str, bankroll: f
         if home_rl is not None or away_rl is not None:
             rl_parts = []
             if home_rl is not None:
-                rl_parts.append(f'{row["homeAbbr"]} -1.5 @ {home_rl:.2f}')
+                rl_parts.append(f'{row["homeAbbr"]} {row.get("homeRlPoint", -1.5):+g} @ {home_rl:.2f}')
             if away_rl is not None:
-                rl_parts.append(f'{row["awayAbbr"]} +1.5 @ {away_rl:.2f}')
+                rl_parts.append(f'{row["awayAbbr"]} {row.get("awayRlPoint", 1.5):+g} @ {away_rl:.2f}')
             rl_line = "📐 RUN LINE: " + "  |  ".join(rl_parts)
 
         # When RL is the primary bet, use RL odds for display
@@ -970,46 +977,6 @@ ACCA_TYPE_STAKES = {
 ACCA_STAKE = 10.00  # legacy fallback
 
 
-def _spread_adj_prob(model_prob: float, line: float) -> float:
-    """
-    Estimate the true probability of covering a run-line given the model's
-    ML win probability and the spread line.
-
-    Positive lines (+1.5, +2.5): easier to cover — probability is HIGHER than ML win.
-    Negative lines (-1.5 through -4.5): harder to cover — probability is LOWER.
-
-    The adjustment is deliberately conservative. A -2.5 or -3.5 spread CAN be
-    chosen — but only when the odds are high enough that adjusted edge still
-    beats ML. This naturally filters out junk spread picks while allowing
-    genuine blowout opportunities through.
-
-    Rough MLB run-distribution anchors used to set the adjustments:
-      -1.5  → win by 2+  ~82% of wins  → subtract ~18% of model_prob
-      -2.5  → win by 3+  ~65% of wins  → subtract ~30% of model_prob
-      -3.5  → win by 4+  ~50% of wins  → subtract ~42% of model_prob
-      -4.5  → win by 5+  ~37% of wins  → subtract ~52% of model_prob
-    """
-    if line >= 2.5:
-        return min(0.95, model_prob + 0.14)
-    elif line >= 1.5:
-        return min(0.95, model_prob + 0.10)
-    elif line >= 0.5:
-        return min(0.95, model_prob + 0.04)
-    elif line >= -0.5:
-        return model_prob
-    elif line >= -1.5:
-        return max(0.05, model_prob - 0.18)
-    elif line >= -2.5:
-        return max(0.05, model_prob - 0.30)
-    elif line >= -3.5:
-        return max(0.05, model_prob - 0.42)
-    elif line >= -4.5:
-        return max(0.05, model_prob - 0.52)
-    else:
-        # -5.5 and beyond: only viable for near-certain blowout scenarios
-        return max(0.04, model_prob - 0.60)
-
-
 def _best_acca_leg(row: dict) -> dict | None:
     """
     Find the best-value market for one game as an accumulator leg.
@@ -1061,50 +1028,6 @@ def _best_acca_leg(row: dict) -> dict | None:
         "line":     "ml",
         "pickSide": pick_side,
     }
-
-    # Evaluate all real spread lines offered by The Odds API.
-    # Only consider lines in the range -1.5 to +1.5 — anything beyond that
-    # has unreliable probability estimates and is excluded from accas.
-    rl_options = row.get("homeRlOptions" if pick_side == "home" else "awayRlOptions", [])
-    for opt in rl_options:
-        line = opt.get("line")
-        odds = opt.get("odds")
-        if line is None or not isinstance(odds, (int, float)) or odds <= 1.0:
-            continue
-        # Allow spreads from -5.5 to +2.5. Beyond that, probability estimates
-        # become too unreliable to trust. The edge calculation below acts as
-        # the natural filter — large negative lines need very high odds to pass.
-        if line < -5.5 or line > 2.5:
-            continue
-
-        adj_prob  = _spread_adj_prob(model_prob, line)
-        adj_edge  = round(adj_prob - 1.0 / odds, 4)
-
-        # Only upgrade if this market clearly beats ML on adjusted edge
-        # (require at least 0.005 improvement to avoid noise)
-        if adj_edge > best["edge"] + 0.005:
-            best = {
-                "label":    f"{abbr} {line:+.1f}",
-                "odds":     round(float(odds), 2),
-                "line":     f"{line:+.1f}",
-                "adj_prob": adj_prob,
-                "edge":     adj_edge,
-            }
-
-    if best["edge"] <= 0:
-        return None
-
-    return {
-        "gamePk":   str(row.get("gamePk", "")),
-        "game":     game,
-        "label":    best["label"],
-        "odds":     best["odds"],
-        "edge":     best["edge"],
-        "adjProb":  round(best["adj_prob"], 4),   # used for combined EV calculation
-        "line":     best["line"],
-        "pickSide": pick_side,
-    }
-
 
 def build_accumulators(predictions: list[dict]) -> list[dict]:
     """
@@ -1247,7 +1170,7 @@ def write_excel_report(predictions: list[dict], target_date: str, bankroll: floa
         ws[cell].alignment = Alignment(horizontal="left", vertical="center")
     ws.merge_cells("A1:H1")
 
-    headers = ["Game", "Pick", "Odds", "Stake", "Decision", "Result", "Profit/Loss"]
+    headers = ["Game", "Pick", "Odds", "Stake", "Decision", "Result", "Profit/Loss", "Game PK"]
 
     header_row = 6
     for col, header in enumerate(headers, start=1):
@@ -1278,6 +1201,7 @@ def write_excel_report(predictions: list[dict], target_date: str, bankroll: floa
             summary["decision"],
             "",
             f'=IF(E{row_number}<>"BET",0,IF(F{row_number}="Win",(C{row_number}-1)*VALUE(SUBSTITUTE(D{row_number},"EUR ","")),IF(F{row_number}="Loss",-VALUE(SUBSTITUTE(D{row_number},"EUR ","")),IF(F{row_number}="Push",0,""))))',
+            str(row.get("gamePk", "")),
         ]
 
         fill = bet_fill if summary["decision"] == "BET" else skip_fill
@@ -1331,6 +1255,7 @@ def write_excel_report(predictions: list[dict], target_date: str, bankroll: floa
         "E": 12,
         "F": 12,
         "G": 14,
+        "H": 12,
     }
     for col_letter, width in widths.items():
         ws.column_dimensions[col_letter].width = width
@@ -1347,7 +1272,8 @@ def write_excel_report(predictions: list[dict], target_date: str, bankroll: floa
     )
 
     ws.freeze_panes = "A7"
-    ws.auto_filter.ref = f"A6:G{data_end}"
+    ws.column_dimensions["H"].hidden = True
+    ws.auto_filter.ref = f"A6:H{data_end}"
 
     wb.save(out_file)
     return out_file
@@ -1742,12 +1668,17 @@ def fetch_mlb_odds(target_date: str) -> tuple[dict, str]:
 
         books = g.get("bookmakers", [])
         alt_books = alt_spreads_by_game.get((away_full, home_full), [])
-        away_ml, away_bk = best_by_priority(books, "h2h", away_full)
-        home_ml, home_bk = best_by_priority(books, "h2h", home_full)
-        away_rl, _ = best_by_priority(books, "spreads", away_full)
-        home_rl, _ = best_by_priority(books, "spreads", home_full)
-        away_rl_options = collect_spread_options(books, alt_books, away_full)
-        home_rl_options = collect_spread_options(books, alt_books, home_full)
+        away_ml, away_bk = best_moneyline(books, away_full)
+        home_ml, home_bk = best_moneyline(books, home_full)
+        if home_ml and away_ml:
+            home_rl_point, away_rl_point = standard_run_line_points(home_ml, away_ml)
+            home_rl, _ = best_spread(books, home_full, home_rl_point)
+            away_rl, _ = best_spread(books, away_full, away_rl_point)
+        else:
+            home_rl_point = away_rl_point = None
+            home_rl = away_rl = None
+        away_rl_options = collect_filtered_spread_options(books, alt_books, away_full)
+        home_rl_options = collect_filtered_spread_options(books, alt_books, home_full)
         home_no_vig, away_no_vig = no_vig_probs(home_ml, away_ml)
 
         result[(away_abbr, home_abbr)] = {
@@ -1755,6 +1686,8 @@ def fetch_mlb_odds(target_date: str) -> tuple[dict, str]:
             "home_ml": home_ml,
             "away_rl": away_rl,
             "home_rl": home_rl,
+            "away_rl_point": away_rl_point,
+            "home_rl_point": home_rl_point,
             "away_implied": round(1 / away_ml, 4) if away_ml else None,
             "home_implied": round(1 / home_ml, 4) if home_ml else None,
             "away_no_vig": away_no_vig,
@@ -1923,6 +1856,8 @@ if __name__ == "__main__":
             "homeMl": market["home_ml"] if market else None,
             "awayRl": market["away_rl"] if market else None,
             "homeRl": market["home_rl"] if market else None,
+            "awayRlPoint": market.get("away_rl_point") if market else None,
+            "homeRlPoint": market.get("home_rl_point") if market else None,
             "useRl": use_rl,
             "rlPickOdds": round(rl_pick_odds, 3) if use_rl and rl_pick_odds else None,
             "awayImplied": market["away_implied"] if market else None,

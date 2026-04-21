@@ -147,12 +147,22 @@ def fetch_scores(target_date: str) -> dict:
     return scores
 
 
+def normalize_log_row(row: dict) -> dict:
+    """Return one canonical 17-column log row, including rows read from older CSVs."""
+    normalized = {header: row.get(header, "") for header in LOG_HEADERS}
+    extras = row.get(None) or []
+    missing = [header for header in LOG_HEADERS if normalized.get(header, "") == ""]
+    for header, value in zip(missing, extras):
+        normalized[header] = value
+    return normalized
+
+
 def read_log(log_path: Path = None) -> list[dict]:
     path = log_path or RESULTS_LOG
     if not path.exists():
         return []
     with open(path, newline="", encoding="utf-8") as f:
-        return list(csv.DictReader(f))
+        return [normalize_log_row(row) for row in csv.DictReader(f)]
 
 
 def current_bankroll(log_rows: list[dict]) -> float:
@@ -169,12 +179,8 @@ def already_settled(log_rows: list[dict], target_date: str) -> set[str]:
 def append_rows(new_rows: list[dict], log_path: Path = None):
     path = log_path or RESULTS_LOG
     path.parent.mkdir(parents=True, exist_ok=True)
-    write_header = not path.exists()
-    with open(path, "a", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=LOG_HEADERS)
-        if write_header:
-            writer.writeheader()
-        writer.writerows(new_rows)
+    existing = read_log(path)
+    write_log(existing + [normalize_log_row(row) for row in new_rows], path)
 
 
 def write_log(rows: list[dict], log_path: Path = None):
@@ -183,7 +189,7 @@ def write_log(rows: list[dict], log_path: Path = None):
     with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=LOG_HEADERS)
         writer.writeheader()
-        writer.writerows(rows)
+        writer.writerows([normalize_log_row(row) for row in rows])
 
 
 def remove_pending_for_games(log_rows: list[dict], target_date: str, game_pks: set[str]) -> tuple[list[dict], int]:
@@ -604,6 +610,10 @@ if __name__ == "__main__":
                 "pnl":            "",
                 "bankroll_before": f"{bankroll:.2f}",
                 "bankroll_after":  f"{bankroll:.2f}",
+                "edge":           f"{row_edge:.4f}",
+                "edge_bucket":    row_edge_bkt,
+                "closing_odds":   "",
+                "clv_pct":        "",
             })
             continue
 

@@ -17,12 +17,13 @@ import time
 import json
 import sys
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
 import pandas as pd
 
 sys.path.append(str(Path(__file__).parent.parent.parent))
-from mlb.scripts.feature_utils import aggregate_bullpen_from_pitchers, pitcher_row_from_stat
+from mlb.scripts.feature_utils import aggregate_bullpen_from_pitchers, parse_ip, pitcher_row_from_stat, safe_float
 
 MLB = "https://statsapi.mlb.com/api/v1"
 RAW_DIR = Path(__file__).parent.parent / "data" / "raw"
@@ -163,6 +164,55 @@ def fetch_pitcher_stats() -> pd.DataFrame:
     return df
 
 
+def _fetch_one_game_pitching_lines(g: dict) -> list[dict]:
+    rows = []
+    try:
+        box = get(f"{MLB}/game/{int(g['game_pk'])}/boxscore")
+    except Exception as exc:
+        print(f"    boxscore failed for {g['game_pk']}: {exc}")
+        return rows
+    for side in ("home", "away"):
+        team_abbr = g[f"{side}_team"]
+        team_box = box.get("teams", {}).get(side, {})
+        pitcher_ids = team_box.get("pitchers", [])
+        players = team_box.get("players", {})
+        for order_idx, pid in enumerate(pitcher_ids):
+            pdata = players.get(f"ID{pid}", {})
+            stat = pdata.get("stats", {}).get("pitching", {})
+            person = pdata.get("person", {})
+            rows.append({
+                "game_pk": int(g["game_pk"]),
+                "game_date": g["game_date"],
+                "team": team_abbr,
+                "opponent": g["away_team"] if side == "home" else g["home_team"],
+                "pitcher_id": int(pid),
+                "pitcher_name": person.get("fullName", "?"),
+                "is_starter": 1 if order_idx == 0 else 0,
+                "ip": parse_ip(stat.get("inningsPitched", 0)),
+                "hits": safe_float(stat.get("hits"), 0.0),
+                "er": safe_float(stat.get("earnedRuns"), 0.0),
+                "k": safe_float(stat.get("strikeOuts"), 0.0),
+                "walks": safe_float(stat.get("baseOnBalls"), 0.0),
+                "home_runs": safe_float(stat.get("homeRuns"), 0.0),
+                "batters_faced": safe_float(stat.get("battersFaced"), 0.0),
+                "is_left": 1 if (pdata.get("person", {}).get("pitchHand") or {}).get("code") == "L" else 0,
+            })
+    return rows
+
+
+def fetch_game_pitching_lines(games: pd.DataFrame, max_workers: int = 8) -> pd.DataFrame:
+    """Fetch per-game pitching lines used to build leakage-safe pregame features."""
+    rows = []
+    records = games.sort_values("game_date").to_dict("records")
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        futures = [pool.submit(_fetch_one_game_pitching_lines, g) for g in records]
+        for idx, future in enumerate(as_completed(futures), start=1):
+            if idx == 1 or idx % 100 == 0:
+                print(f"  Fetching boxscores {idx}/{len(records)} ...", flush=True)
+            rows.extend(future.result())
+    return pd.DataFrame(rows)
+
+
 def fetch_team_pitching_proxy() -> pd.DataFrame:
     """Team pitching quality proxy used when player stat rows lack team abbreviations."""
     teams = get(f"{MLB}/teams", params={"sportId": 1, "season": SEASON}).get("teams", [])
@@ -206,6 +256,12 @@ if __name__ == "__main__":
     pitchers = fetch_pitcher_stats()
     out = RAW_DIR / "pitchers_2025.csv"
     pitchers.to_csv(out, index=False)
+    print(f"  Saved -> {out}\n")
+
+    print("Per-game pitching lines:")
+    pitching_lines = fetch_game_pitching_lines(games)
+    out = RAW_DIR / "pitcher_game_logs_2025.csv"
+    pitching_lines.to_csv(out, index=False)
     print(f"  Saved -> {out}\n")
 
     print("Bullpen stats:")

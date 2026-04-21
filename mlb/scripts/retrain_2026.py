@@ -37,13 +37,9 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 sys.path.append(str(Path(__file__).parent.parent.parent))
 from mlb.scripts.model import FEATURES
-from mlb.scripts.preprocess import (
-    rolling_stats, merge_pitchers, merge_bullpens, add_derived, merge_ballpark,
-)
-from mlb.scripts.feature_utils import (
-    aggregate_bullpen_from_pitchers,
-    pitcher_row_from_stat,
-)
+from mlb.scripts.preprocess import rolling_stats, add_derived, merge_ballpark
+from mlb.scripts.fetch_data import fetch_game_pitching_lines
+from mlb.scripts.feature_utils import pitcher_row_from_stat
 
 RAW_DIR   = Path(__file__).parent.parent / "data" / "raw"
 PROC_DIR  = Path(__file__).parent.parent / "data" / "processed"
@@ -180,10 +176,8 @@ def fetch_2026_team_pitching_proxy() -> pd.DataFrame:
 
 # ─── PREPROCESSING ────────────────────────────────────────────────────────────
 
-def preprocess(games_df: pd.DataFrame, pitchers_df: pd.DataFrame, bullpens_df: pd.DataFrame | None = None) -> pd.DataFrame:
-    df = rolling_stats(games_df)
-    df = merge_pitchers(df, pitchers_df)
-    df = merge_bullpens(df, bullpens_df)
+def preprocess(games_df: pd.DataFrame, pitcher_logs_df: pd.DataFrame | None = None) -> pd.DataFrame:
+    df = rolling_stats(games_df, pitcher_logs_df)
     df = add_derived(df)
     df = merge_ballpark(df)
     before = len(df)
@@ -280,15 +274,13 @@ if __name__ == "__main__":
     RAW_DIR.mkdir(parents=True, exist_ok=True)
     games_2026.to_csv(RAW_DIR / "games_2026.csv", index=False)
     pitchers_2026.to_csv(RAW_DIR / "pitchers_2026.csv", index=False)
-    bullpens_2026 = aggregate_bullpen_from_pitchers(pitchers_2026)
-    if bullpens_2026.empty:
-        bullpens_2026 = fetch_2026_team_pitching_proxy()
-    bullpens_2026.to_csv(RAW_DIR / "bullpens_2026.csv", index=False)
+    pitcher_logs_2026 = fetch_game_pitching_lines(games_2026)
+    pitcher_logs_2026.to_csv(RAW_DIR / "pitcher_game_logs_2026.csv", index=False)
     print(f"  Saved raw 2026 data to {RAW_DIR}")
 
     # --- 2. Preprocess 2026 ---
     print("\n[ 2/4 ] Preprocessing 2026 data ...")
-    df_2026 = preprocess(games_2026, pitchers_2026, bullpens_2026)
+    df_2026 = preprocess(games_2026, pitcher_logs_2026)
 
     # --- 3. Load + combine with 2025 processed ---
     print("\n[ 3/4 ] Combining 2025 + 2026 data ...")

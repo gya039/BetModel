@@ -12,7 +12,6 @@ Usage:
     python mlb/scripts/build_tracker_xlsx.py --date 2026-04-14
 """
 
-import csv
 import sys
 import argparse
 from pathlib import Path
@@ -27,7 +26,8 @@ from openpyxl.formatting.rule import CellIsRule
 # ── paths ──────────────────────────────────────────────────────────────────────
 ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(ROOT))
-from mlb.scripts.predict_today import format_prediction_date, PREDICTIONS_DIR
+from mlb.scripts.predict_today import format_prediction_date, PREDICTIONS_DIR, ODDS_TEAM_MAP
+from mlb.scripts.record_results import read_log
 
 RESULTS_CSV         = PREDICTIONS_DIR / "results_log.csv"
 RESULTS_CSV_UPDATED = PREDICTIONS_DIR / "results_log_updated.csv"
@@ -63,10 +63,48 @@ BORDER = thin_border()
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 def load_results() -> list[dict]:
-    if not RESULTS_CSV.exists():
-        return []
-    with open(RESULTS_CSV, newline="", encoding="utf-8") as f:
-        return list(csv.DictReader(f))
+    return read_log(RESULTS_CSV)
+
+
+def _norm(value) -> str:
+    return str(value or "").strip().lower()
+
+
+def _team_texts(abbr: str) -> set[str]:
+    abbr_text = str(abbr or "").strip()
+    full = ODDS_TEAM_MAP.get(abbr_text, "")
+    return {t.lower() for t in (abbr_text, full) if t}
+
+
+def _result_indexes(day_rows: list[dict]) -> tuple[dict[str, dict], dict[tuple[str, str, str], dict]]:
+    by_pk = {}
+    by_team_pick = {}
+    for row in day_rows:
+        game_pk = str(row.get("game_pk") or "").strip()
+        if game_pk:
+            by_pk[game_pk] = row
+        home = str(row.get("home_team") or "").strip()
+        away = str(row.get("away_team") or "").strip()
+        pick = str(row.get("pick_team") or "").strip()
+        if home and away and pick:
+            by_team_pick[tuple(sorted((home, away))) + (pick,)] = row
+    return by_pk, by_team_pick
+
+
+def _find_result_for_xlsx_row(ws, row_idx: int, by_pk: dict[str, dict], by_team_pick: dict[tuple[str, str, str], dict]) -> dict | None:
+    game_pk = str(ws.cell(row=row_idx, column=8).value or "").strip()
+    if game_pk and game_pk in by_pk:
+        return by_pk[game_pk]
+
+    game_text = _norm(ws.cell(row=row_idx, column=1).value)
+    pick_text = _norm(ws.cell(row=row_idx, column=2).value)
+    for (team_a, team_b, pick_team), result in by_team_pick.items():
+        team_a_match = any(text in game_text for text in _team_texts(team_a))
+        team_b_match = any(text in game_text for text in _team_texts(team_b))
+        pick_match = any(text in pick_text for text in _team_texts(pick_team))
+        if team_a_match and team_b_match and pick_match:
+            return result
+    return None
 
 
 def iso_week_label(date_str: str) -> str:
@@ -130,12 +168,11 @@ def update_prediction_xlsx(target_date: str, all_results: list[dict]) -> None:
             break
         data_row_indices.append(row_idx)
 
-    # Match positionally: same order in CSV and xlsx
-    for pos, xlsx_row_idx in enumerate(data_row_indices):
-        if pos >= len(day_rows):
-            break
-
-        r = day_rows[pos]
+    by_pk, by_team_pick = _result_indexes(day_rows)
+    for xlsx_row_idx in data_row_indices:
+        r = _find_result_for_xlsx_row(ws, xlsx_row_idx, by_pk, by_team_pick)
+        if r is None:
+            continue
         decision = r.get("decision", "SKIP")
         result   = r.get("result", "N/A")
 
@@ -172,8 +209,7 @@ def update_updated_prediction_xlsx(target_date: str) -> None:
     if not xlsx_path.exists():
         return
 
-    with open(RESULTS_CSV_UPDATED, newline="", encoding="utf-8") as f:
-        all_results = list(csv.DictReader(f))
+    all_results = read_log(RESULTS_CSV_UPDATED)
 
     day_rows = [r for r in all_results if r["date"] == target_date]
     if not day_rows:
@@ -192,11 +228,11 @@ def update_updated_prediction_xlsx(target_date: str) -> None:
             break
         data_row_indices.append(row_idx)
 
-    for pos, xlsx_row_idx in enumerate(data_row_indices):
-        if pos >= len(day_rows):
-            break
-
-        r = day_rows[pos]
+    by_pk, by_team_pick = _result_indexes(day_rows)
+    for xlsx_row_idx in data_row_indices:
+        r = _find_result_for_xlsx_row(ws, xlsx_row_idx, by_pk, by_team_pick)
+        if r is None:
+            continue
         decision = r.get("decision", "SKIP")
         result   = r.get("result", "N/A")
 

@@ -41,9 +41,9 @@ sys.path.append(str(Path(__file__).parent.parent.parent))
 from mlb.scripts.feature_utils import (
     add_ballpark,
     add_derived_diffs,
-    aggregate_bullpen_from_pitchers,
-    bullpen_features,
-    load_optional_bullpen_csv,
+    compute_fip,
+    compute_k_bb_pct,
+    neutral_bullpen_features,
     pitcher_features,
 )
 
@@ -89,8 +89,86 @@ BALLPARK_FACTORS = {
     "ATH": 0.95,  # Sutter Health Park (Sacramento)
 }
 
+def _empty_pitcher_state() -> dict:
+    return {
+        "ip": 0.0, "er": 0.0, "k": 0.0, "walks": 0.0,
+        "home_runs": 0.0, "hits": 0.0, "batters_faced": 0.0,
+        "is_left": 0,
+    }
 
-def rolling_stats(games: pd.DataFrame) -> pd.DataFrame:
+
+def _pitcher_snapshot(state: dict) -> dict:
+    ip = float(state.get("ip", 0.0) or 0.0)
+    if ip <= 0:
+        raw = {
+            "era": None, "whip": None, "k9": None, "fip": None, "bb9": None,
+            "k_bb_pct": None, "hr9": None, "ip": 0.0, "is_left": state.get("is_left", 0),
+        }
+    else:
+        walks = float(state.get("walks", 0.0) or 0.0)
+        k = float(state.get("k", 0.0) or 0.0)
+        hr = float(state.get("home_runs", 0.0) or 0.0)
+        hits = float(state.get("hits", 0.0) or 0.0)
+        bf = float(state.get("batters_faced", 0.0) or 0.0)
+        raw = {
+            "era": state.get("er", 0.0) * 9.0 / ip,
+            "whip": (hits + walks) / ip,
+            "k9": k * 9.0 / ip,
+            "fip": compute_fip(hr, walks, k, ip),
+            "bb9": walks * 9.0 / ip,
+            "k_bb_pct": compute_k_bb_pct(k, walks, bf),
+            "hr9": hr * 9.0 / ip,
+            "ip": ip,
+            "is_left": state.get("is_left", 0),
+        }
+    return pitcher_features({0: raw}, 0)
+
+
+def _update_pitcher_state(state: dict, line: dict) -> None:
+    for key in ("ip", "er", "k", "walks", "home_runs", "hits", "batters_faced"):
+        state[key] = float(state.get(key, 0.0) or 0.0) + float(line.get(key, 0.0) or 0.0)
+    if line.get("is_left"):
+        state["is_left"] = int(line.get("is_left", 0))
+
+
+def _bullpen_quality_from_history(lines: list[dict]) -> dict:
+    if not lines:
+        base = neutral_bullpen_features()
+        return {k: base[k] for k in ("BP_ERA", "BP_WHIP", "BP_K_BB")}
+    ip = sum(float(x.get("ip", 0.0) or 0.0) for x in lines)
+    if ip <= 0:
+        base = neutral_bullpen_features()
+        return {k: base[k] for k in ("BP_ERA", "BP_WHIP", "BP_K_BB")}
+    er = sum(float(x.get("er", 0.0) or 0.0) for x in lines)
+    hits = sum(float(x.get("hits", 0.0) or 0.0) for x in lines)
+    walks = sum(float(x.get("walks", 0.0) or 0.0) for x in lines)
+    k = sum(float(x.get("k", 0.0) or 0.0) for x in lines)
+    return {
+        "BP_ERA": round(er * 9.0 / ip, 4),
+        "BP_WHIP": round((hits + walks) / ip, 4),
+        "BP_K_BB": round(k / max(walks, 1.0), 4),
+    }
+
+
+def _bullpen_fatigue(team: str, game_date: pd.Timestamp, bullpen_daily: dict, top_relievers: dict) -> dict:
+    rows = list(bullpen_daily.get(team, []))
+    last3 = [r for r in rows if 1 <= (game_date - r["date"]).days <= 3]
+    yday = [r for r in rows if (game_date - r["date"]).days == 1]
+    top_ids = top_relievers.get(team, set())
+    quality = _bullpen_quality_from_history([
+        line for r in rows for line in r.get("lines", [])
+    ])
+    return {
+        **quality,
+        "BP_IP_LAST_3D": round(sum(r["ip"] for r in last3), 3),
+        "BP_IP_YESTERDAY": round(sum(r["ip"] for r in yday), 3),
+        "BP_RELIEVERS_LAST_3D": sum(r["relievers"] for r in last3),
+        "BP_RELIEVERS_YESTERDAY": sum(r["relievers"] for r in yday),
+        "BP_TOP_USED_YESTERDAY": 1 if any(top_ids & set(r.get("pitcher_ids", [])) for r in yday) else 0,
+    }
+
+
+def rolling_stats(games: pd.DataFrame, pitcher_game_logs: pd.DataFrame | None = None) -> pd.DataFrame:
     """
     For each game, compute rolling features from PRIOR games for both teams.
     Uses a per-team deque of recent results (run differential, win/loss).
@@ -99,6 +177,20 @@ def rolling_stats(games: pd.DataFrame) -> pd.DataFrame:
     # Build chronological list of results per team
     # Key: team_id -> deque of (run_diff, runs_for, runs_against, win)
     team_history: dict[int, deque] = defaultdict(lambda: deque(maxlen=20))
+    pitcher_history: dict[int, dict] = defaultdict(_empty_pitcher_state)
+    bullpen_daily: dict[str, deque] = defaultdict(lambda: deque(maxlen=14))
+    reliever_counts: dict[str, dict[int, int]] = defaultdict(lambda: defaultdict(int))
+    top_relievers: dict[str, set[int]] = defaultdict(set)
+
+    if pitcher_game_logs is not None and not pitcher_game_logs.empty:
+        plogs = pitcher_game_logs.copy()
+        plogs["game_date"] = pd.to_datetime(plogs["game_date"])
+        game_pitching = {
+            int(pk): g.to_dict("records")
+            for pk, g in plogs.groupby("game_pk")
+        }
+    else:
+        game_pitching = {}
 
     rows = []
     for _, g in games.sort_values("game_date").iterrows():
@@ -132,6 +224,11 @@ def rolling_stats(games: pd.DataFrame) -> pd.DataFrame:
         away_l10 = stats(at, 10)
         away_l5  = stats(at, 5)
         away_l20 = stats(at, 20)
+        game_date = pd.to_datetime(g["game_date"])
+        home_sp_features = _pitcher_snapshot(pitcher_history[int(g["home_sp_id"])]) if pd.notna(g.get("home_sp_id")) else _pitcher_snapshot({})
+        away_sp_features = _pitcher_snapshot(pitcher_history[int(g["away_sp_id"])]) if pd.notna(g.get("away_sp_id")) else _pitcher_snapshot({})
+        home_bp = _bullpen_fatigue(g["home_team"], game_date, bullpen_daily, top_relievers)
+        away_bp = _bullpen_fatigue(g["away_team"], game_date, bullpen_daily, top_relievers)
 
         row = {
             "game_pk":      g["game_pk"],
@@ -169,6 +266,14 @@ def rolling_stats(games: pd.DataFrame) -> pd.DataFrame:
             "AWAY_L20_RUNS_FOR": away_l20["L20_RUNS_FOR"],
             "AWAY_L20_RUNS_AGN": away_l20["L20_RUNS_AGN"],
         }
+        for key, value in home_sp_features.items():
+            row[f"HOME_{key}"] = value
+        for key, value in away_sp_features.items():
+            row[f"AWAY_{key}"] = value
+        for key, value in home_bp.items():
+            row[f"HOME_{key}"] = value
+        for key, value in away_bp.items():
+            row[f"AWAY_{key}"] = value
         rows.append(row)
 
         # Update history AFTER building features (no look-ahead)
@@ -177,32 +282,38 @@ def rolling_stats(games: pd.DataFrame) -> pd.DataFrame:
         team_history[ht].append((home_rd, g["home_score"], g["away_score"], int(g["home_win"])))
         team_history[at].append((away_rd, g["away_score"], g["home_score"], int(not g["home_win"])))
 
+        # Update pitcher and bullpen states only after features are created.
+        for line in game_pitching.get(int(g["game_pk"]), []):
+            pid = int(line["pitcher_id"])
+            _update_pitcher_state(pitcher_history[pid], line)
+        for team in (g["home_team"], g["away_team"]):
+            reliever_lines = [
+                line for line in game_pitching.get(int(g["game_pk"]), [])
+                if line.get("team") == team and int(line.get("is_starter", 0)) == 0
+            ]
+            for line in reliever_lines:
+                reliever_counts[team][int(line["pitcher_id"])] += 1
+            top_relievers[team] = {
+                pid for pid, _ in sorted(reliever_counts[team].items(), key=lambda item: item[1], reverse=True)[:3]
+            }
+            bullpen_daily[team].append({
+                "date": game_date,
+                "ip": sum(float(line.get("ip", 0.0) or 0.0) for line in reliever_lines),
+                "relievers": len({int(line["pitcher_id"]) for line in reliever_lines}),
+                "pitcher_ids": [int(line["pitcher_id"]) for line in reliever_lines],
+                "lines": reliever_lines,
+            })
+
     return pd.DataFrame(rows)
 
 
-def merge_pitchers(df: pd.DataFrame, pitchers: pd.DataFrame) -> pd.DataFrame:
-    """
-    Join stabilized starter features onto each game by starter ID.
-    Low-IP starters are blended toward league average inside pitcher_features().
-    """
-    for side, col in (("HOME", "home_sp_id"), ("AWAY", "away_sp_id")):
-        feature_rows = df[col].apply(lambda pid: pitcher_features(pitchers, pid))
-        if feature_rows.empty:
-            continue
-        for feature_name in feature_rows.iloc[0].keys():
-            df[f"{side}_{feature_name}"] = feature_rows.apply(lambda values: values[feature_name])
+def merge_pitchers(df: pd.DataFrame, pitchers: pd.DataFrame | None = None) -> pd.DataFrame:
+    """Compatibility hook: historical SP features are built pregame-only in rolling_stats()."""
     return df
 
 
-def merge_bullpens(df: pd.DataFrame, bullpens: pd.DataFrame | None) -> pd.DataFrame:
-    """Join bullpen quality and fatigue features, using neutral fallbacks if absent."""
-    for idx, row in df.iterrows():
-        home_bp = bullpen_features(bullpens, row["home_team"])
-        away_bp = bullpen_features(bullpens, row["away_team"])
-        for key, value in home_bp.items():
-            df.at[idx, f"HOME_{key}"] = value
-        for key, value in away_bp.items():
-            df.at[idx, f"AWAY_{key}"] = value
+def merge_bullpens(df: pd.DataFrame, bullpens: pd.DataFrame | None = None) -> pd.DataFrame:
+    """Compatibility hook: historical bullpen features are built pregame-only in rolling_stats()."""
     return df
 
 
@@ -217,19 +328,16 @@ def merge_ballpark(df: pd.DataFrame) -> pd.DataFrame:
 if __name__ == "__main__":
     print("\n=== MLB 2025 Preprocessing ===\n")
 
-    games    = pd.read_csv(RAW_DIR / "games_2025.csv", parse_dates=["game_date"])
-    pitchers = pd.read_csv(RAW_DIR / "pitchers_2025.csv")
-    bullpens = load_optional_bullpen_csv(RAW_DIR, 2025)
-    if bullpens is None:
-        bullpens = aggregate_bullpen_from_pitchers(pitchers)
-        if bullpens.empty:
-            print("  Bullpen file not found; using neutral bullpen features")
+    games = pd.read_csv(RAW_DIR / "games_2025.csv", parse_dates=["game_date"])
+    pitcher_logs_path = RAW_DIR / "pitcher_game_logs_2025.csv"
+    pitcher_logs = None
+    if pitcher_logs_path.exists():
+        pitcher_logs = pd.read_csv(pitcher_logs_path)
+        print(f"  Loaded {len(games)} games, {len(pitcher_logs)} pitcher game lines")
+    else:
+        print("  Pitcher game logs not found; using neutral pregame SP/bullpen features")
 
-    print(f"  Loaded {len(games)} games, {len(pitchers)} pitchers")
-
-    df = rolling_stats(games)
-    df = merge_pitchers(df, pitchers)
-    df = merge_bullpens(df, bullpens)
+    df = rolling_stats(games, pitcher_logs)
     df = add_derived(df)
     df = merge_ballpark(df)
 

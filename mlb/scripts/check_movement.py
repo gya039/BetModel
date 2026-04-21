@@ -25,6 +25,13 @@ from pathlib import Path
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 import requests
+sys.path.append(str(Path(__file__).parent.parent.parent))
+from mlb.scripts.odds_utils import (
+    best_moneyline,
+    best_spread,
+    no_vig_probs,
+    standard_run_line_points,
+)
 
 # Load .env from repo root
 _env_path = Path(__file__).parent.parent.parent / ".env"
@@ -81,17 +88,6 @@ UK_BOOKMAKERS = {
 
 # Abbreviation -> full team name (reverse of ODDS_TEAM_MAP)
 ABBR_TO_FULL = {v: k for k, v in ODDS_TEAM_MAP.items() if k != "Athletics"}
-
-
-def no_vig_probs(home_odds: float | None, away_odds: float | None) -> tuple[float | None, float | None]:
-    if not home_odds or not away_odds or home_odds <= 1 or away_odds <= 1:
-        return None, None
-    h_raw = 1.0 / home_odds
-    a_raw = 1.0 / away_odds
-    total = h_raw + a_raw
-    if total <= 0:
-        return None, None
-    return round(h_raw / total, 4), round(a_raw / total, 4)
 
 
 def ordinal(n: int) -> str:
@@ -162,35 +158,24 @@ def fetch_current_odds(target_date: str) -> dict:
         if not away_abbr or not home_abbr:
             continue
 
-        def best_price(books, market_key, team_name):
-            # Try preferred UK books first
-            for pool in [
-                [b for b in books if b.get("key") in PREFERRED_BOOKMAKERS],
-                [b for b in books if b.get("key") in UK_BOOKMAKERS],
-                books,
-            ]:
-                best = None
-                for bm in pool:
-                    for mkt in bm.get("markets", []):
-                        if mkt.get("key") != market_key:
-                            continue
-                        for outcome in mkt.get("outcomes", []):
-                            if outcome.get("name") == team_name:
-                                if best is None or outcome["price"] > best:
-                                    best = outcome["price"]
-                if best is not None:
-                    return best
-            return None
-
         books = g.get("bookmakers", [])
-        home_ml = best_price(books, "h2h", home_full)
-        away_ml = best_price(books, "h2h", away_full)
+        home_ml, _ = best_moneyline(books, home_full)
+        away_ml, _ = best_moneyline(books, away_full)
         home_no_vig, away_no_vig = no_vig_probs(home_ml, away_ml)
+        if home_ml and away_ml:
+            home_rl_point, away_rl_point = standard_run_line_points(home_ml, away_ml)
+            home_rl, _ = best_spread(books, home_full, home_rl_point)
+            away_rl, _ = best_spread(books, away_full, away_rl_point)
+        else:
+            home_rl_point = away_rl_point = None
+            home_rl = away_rl = None
         result[(home_abbr, away_abbr)] = {
             "home_ml": home_ml,
             "away_ml": away_ml,
-            "home_rl": best_price(books, "spreads", home_full),  # shown only; not selected without RL model
-            "away_rl": best_price(books, "spreads", away_full),
+            "home_rl": home_rl,
+            "away_rl": away_rl,
+            "home_rl_point": home_rl_point,
+            "away_rl_point": away_rl_point,
             "home_no_vig": home_no_vig,
             "away_no_vig": away_no_vig,
             "book_count": len(books),
