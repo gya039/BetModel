@@ -1,0 +1,369 @@
+{% extends "base.html" %}
+{% block title %}Octagon IQ - Fight-Night Bankroll Command{% endblock %}
+
+{% block content %}
+
+{% set singles = plan.get('singles', []) %}
+{% set accas = plan.get('accumulators', []) %}
+{% set history = plan.get('history', []) %}
+{% set bankroll = plan.get('bankroll', 500) %}
+{% set base_bankroll = plan.get('base_bankroll', 500) %}
+{% set pnl = bankroll - base_bankroll %}
+{% set total_exposure = (plan.get('total_single_stake', 0) or 0) + (plan.get('total_accumulator_stake', 0) or 0) %}
+{% set top_pick = singles[0] if singles else none %}
+{% set top_acca = accas[0] if accas else none %}
+{% set total_bouts = matchups|length %}
+{% set main_count = 5 if total_bouts >= 13 else ((total_bouts + 1) // 2) %}
+{% set prelim_count = 4 if total_bouts >= 13 else (total_bouts - main_count) %}
+{% set main_card = matchups[:main_count] %}
+{% set prelim_card = matchups[main_count:main_count + prelim_count] %}
+{% set early_prelim_card = matchups[main_count + prelim_count:] %}
+{% set placed_bets = singles + accas %}
+{% set bet_count = placed_bets|length %}
+{% set returns = namespace(total=0) %}
+{% for pick in singles %}
+  {% set returns.total = returns.total + (pick.potential_return or 0) %}
+{% endfor %}
+{% for acca in accas %}
+  {% set returns.total = returns.total + (acca.potential_return or 0) %}
+{% endfor %}
+
+<div class="ticker-band ticker-band--top" aria-label="Live event ticker">
+  <div class="ticker-track">
+    <span>{{ card.get('event_name', 'Upcoming UFC Card') }}</span>
+    <span>⬡</span>
+    <span>{{ total_bouts }} fights on the card</span>
+    <span>⬡</span>
+    <span>{{ card.get('event_name', 'Upcoming UFC Card') }}</span>
+    <span>⬡</span>
+    <span>{{ total_bouts }} fights on the card</span>
+    <span>⬡</span>
+    <span>{{ card.get('event_name', 'Upcoming UFC Card') }}</span>
+    <span>⬡</span>
+    <span>{{ total_bouts }} fights on the card</span>
+    <span>⬡</span>
+  </div>
+</div>
+
+<section class="command-hero">
+  <img class="hero-bg" src="{{ url_for('static', filename='assets/octagon-arena.png') }}" alt="" aria-hidden="true">
+  <div class="hero-overlay" aria-hidden="true"></div>
+  <div class="arena-grid" aria-hidden="true"></div>
+  <div class="scanner-line" aria-hidden="true"></div>
+
+  <div class="hero-content">
+    <div class="command-hero__copy">
+      <div class="hero-kicker">
+        <span class="status-dot"></span>
+        Fight-night bankroll engine
+      </div>
+      <h1>Octagon IQ</h1>
+      <p class="command-hero__sub">
+        Live odds, edge detection, stake control, accumulators, and UFC matchup intelligence in one combat-sports command center.
+      </p>
+      <div class="command-actions">
+        <a href="/bankroll" class="btn btn--neon">Open Bankroll</a>
+        <a href="/betting" class="btn btn--ice">View Betting Board</a>
+        <a href="/check-movement" class="btn btn--ghost">Check Movement</a>
+      </div>
+      <div class="hero-signal-row" aria-label="Platform signals">
+        <span><strong>Live odds</strong> synced</span>
+        <span><strong>Risk</strong> capped</span>
+        <span><strong>Edge</strong> ranked</span>
+      </div>
+    </div>
+  </div>
+
+</section>
+
+<section class="top-command-grid">
+  <div class="hero-console hero-console--dock">
+    <div class="console-topline">
+      <span>Bankroll Core</span>
+      <strong><span class="live-dot" style="display:inline-block;vertical-align:middle;margin-right:0.35rem"></span>ARMED</strong>
+    </div>
+    <div class="bankroll-readout">
+      <span>Current Bank</span>
+      <strong>EUR {{ "%.2f"|format(bankroll) }}</strong>
+      <small class="{% if pnl >= 0 %}profit{% else %}loss{% endif %}">
+        {{ "%+.2f"|format(pnl) }} from EUR {{ "%.2f"|format(base_bankroll) }}
+      </small>
+    </div>
+    <div class="console-metrics">
+      <div>
+        <span>Singles</span>
+        <strong>{{ singles|length }}</strong>
+      </div>
+      <div>
+        <span>Exposure</span>
+        <strong>EUR {{ "%.2f"|format(total_exposure) }}</strong>
+      </div>
+      <div>
+        <span>Accas</span>
+        <strong>{{ accas|length }}</strong>
+      </div>
+    </div>
+  </div>
+
+  <div class="command-summary-card">
+    <div class="panel-header">
+      <span>Fight-Day Position</span>
+      <strong>{{ bet_count }} Bets</strong>
+    </div>
+    <div class="command-summary-grid">
+      <div>
+        <span>Card</span>
+        <strong>{{ total_bouts }}</strong>
+        <small>fights loaded</small>
+      </div>
+      <div>
+        <span>Staked</span>
+        <strong>EUR {{ "%.2f"|format(total_exposure) }}</strong>
+        <small>singles + accas</small>
+      </div>
+      <div>
+        <span>Returns</span>
+        <strong>EUR {{ "%.2f"|format(returns.total) }}</strong>
+        <small>potential payout</small>
+      </div>
+    </div>
+    <div class="command-summary-actions">
+      <a href="/bankroll" class="btn btn--neon">Manage Stakes</a>
+      <a href="/betting" class="btn btn--ice">Open Board</a>
+    </div>
+  </div>
+</section>
+
+<section class="landing-section split-landing">
+  <div class="analysis-panel">
+    <div class="panel-header">
+      <span>Performance Preview</span>
+      <strong>Model Pulse</strong>
+    </div>
+    <div class="pulse-bars">
+      <div>
+        <span>Priced single count</span>
+        <strong>{{ singles|length }}</strong>
+        <div class="edge-bar-wrap" style="margin-top:0.4rem"><div class="edge-bar-fill" style="width: {{ [singles|length * 14, 100] | min }}%"></div></div>
+      </div>
+      <div>
+        <span>Accumulator builds</span>
+        <strong>{{ accas|length }}</strong>
+        <div class="edge-bar-wrap" style="margin-top:0.4rem"><div class="edge-bar-fill" style="width: {{ [accas|length * 28, 100] | min }}%"></div></div>
+      </div>
+      {% set exposure_pct = (total_exposure / bankroll * 100) if bankroll else 0 %}
+      <div>
+        <span>Exposure discipline</span>
+        <strong>{{ "%.1f"|format(exposure_pct) }}%</strong>
+        <div class="edge-bar-wrap" style="margin-top:0.4rem"><div class="edge-bar-fill {% if exposure_pct > 50 %}edge-bar-fill--danger{% endif %}" style="width: {{ [exposure_pct, 100] | min }}%"></div></div>
+      </div>
+    </div>
+    <p>
+      Stakes are generated from edge and confidence, then capped across the card so the app can attack value without overloading the bankroll.
+    </p>
+  </div>
+
+  <div class="featured-ticket glow-border">
+    <div class="panel-header">
+      <span>Featured Angle</span>
+      <strong>{% if top_pick %}Single{% elif top_acca %}Accumulator{% else %}Awaiting Price{% endif %}</strong>
+    </div>
+    {% if top_pick %}
+    <h3>{{ top_pick.selection }}</h3>
+    <p>{{ top_pick.fight }} - {{ top_pick.market }}</p>
+    <div class="ticket-row">
+      <span>Odds</span>
+      <strong>{{ "%.2f"|format(top_pick.decimal_odds) }}</strong>
+    </div>
+    <div class="ticket-row">
+      <span>Stake</span>
+      <strong>EUR {{ "%.2f"|format(top_pick.stake.eur) }}</strong>
+    </div>
+    <div class="ticket-row">
+      <span>Edge</span>
+      <strong>{{ top_pick.edge }}%</strong>
+    </div>
+    {% elif top_acca %}
+    <h3>{{ top_acca.type }}</h3>
+    <p>{{ top_acca.legs|length }}-leg build at {{ "%.2f"|format(top_acca.combined_odds) }}x</p>
+    <div class="ticket-row">
+      <span>Stake</span>
+      <strong>EUR {{ "%.2f"|format(top_acca.stake) }}</strong>
+    </div>
+    <div class="ticket-row">
+      <span>Return</span>
+      <strong>EUR {{ "%.2f"|format(top_acca.potential_return) }}</strong>
+    </div>
+    {% else %}
+    <h3>No Bet Forced</h3>
+    <p>Refresh odds on fight day to unlock priced recommendations.</p>
+    {% endif %}
+  </div>
+</section>
+
+<section class="landing-section bet-ledger-section">
+  <div class="section-heading-row">
+    <div>
+      <h2 class="section-heading">Placed Bets</h2>
+      <p class="section-blurb">Compact slip view with stake, price, and potential return for every active position.</p>
+    </div>
+    <a href="/bankroll" class="btn btn--outline">Bet History</a>
+  </div>
+
+  <div class="bet-ledger">
+    {% for pick in singles %}
+    <a href="/betting/{{ pick.fight_id }}" class="bet-ledger-row">
+      <span class="bet-ledger-type {% if pick.label == 'BEST BET' %}edge-badge edge-badge--high{% elif pick.label == 'VALUE' %}edge-badge edge-badge--value{% else %}edge-badge edge-badge--lean{% endif %}">{{ pick.label }}</span>
+      <div>
+        <strong>{{ pick.selection }}</strong>
+        <small>{{ pick.fight }} · {{ pick.market }} · {{ pick.sportsbook }}</small>
+      </div>
+      <em>{{ "%.2f"|format(pick.decimal_odds) }}</em>
+      <em>EUR {{ "%.2f"|format(pick.stake.eur) }}</em>
+      <em class="profit">EUR {{ "%.2f"|format(pick.potential_return) }}</em>
+    </a>
+    {% endfor %}
+    {% for acca in accas %}
+    <a href="/bankroll" class="bet-ledger-row bet-ledger-row--acca">
+      <span class="bet-ledger-type">{{ acca.type }}</span>
+      <div>
+        <strong>{{ acca.type }} Accumulator</strong>
+        <small>{{ acca.legs|length }} legs · combined {{ "%.2f"|format(acca.combined_odds) }}x</small>
+      </div>
+      <em>{{ "%.2f"|format(acca.combined_odds) }}</em>
+      <em>EUR {{ "%.2f"|format(acca.stake) }}</em>
+      <em class="profit">EUR {{ "%.2f"|format(acca.potential_return) }}</em>
+    </a>
+    {% endfor %}
+    {% if not singles and not accas %}
+    <div class="bet-ledger-row">
+      <span class="bet-ledger-type">Idle</span>
+      <div>
+        <strong>No bets placed</strong>
+        <small>Generate the model and staking plan to populate this ledger.</small>
+      </div>
+      <em>--</em>
+      <em>EUR 0.00</em>
+      <em>EUR 0.00</em>
+    </div>
+    {% endif %}
+  </div>
+</section>
+
+<section class="landing-section activity-layout activity-layout--card-command">
+  <div>
+    <h2 class="section-heading">Card Command</h2>
+    <p class="section-blurb">The card is split into UFC-style blocks below, with each bout linking into the betting board.</p>
+  </div>
+
+  <div class="card-command-panel">
+    <div class="panel-header">
+      <span>Card Command</span>
+      <strong>{{ matchups|length }} Bouts</strong>
+    </div>
+    <h3>{{ card.get('event_name', 'Upcoming UFC Card') }}</h3>
+    <p>
+      Full fight-card access is staged below with every matchup linked directly into the betting model, odds board, and fight-script analysis.
+    </p>
+    <a href="/betting" class="btn btn--ice">Open Full Board</a>
+  </div>
+</section>
+
+<section class="landing-section fight-card-access">
+  <div class="section-heading-row">
+    <div>
+      <h2 class="section-heading">Fight Card Access</h2>
+      <p class="section-blurb">Every bout on the card, kept compact so the landing page still moves fast.</p>
+    </div>
+    <a href="/betting" class="btn btn--outline">Betting Board</a>
+  </div>
+  <div class="compact-card-list compact-card-list--full">
+    <div class="fight-card-group fight-card-group--main">
+      <div class="fight-card-group__header">
+        <span>Main Card</span>
+        <strong>{{ main_card|length }} fights</strong>
+      </div>
+      {% for m in main_card %}
+      {% set fa = m.fighter_a %}
+      {% set fb = m.fighter_b %}
+      <a href="/betting/{{ [fa.fighter_id, fb.fighter_id] | sort | join('_') }}" class="compact-fight-row">
+        <span>{% if loop.first %}Bout {{ total_bouts - loop.index0 }} / Main Event{% elif loop.index == 2 %}Bout {{ total_bouts - loop.index0 }} / Co-Main Event{% else %}Bout {{ total_bouts - loop.index0 }}{% endif %}</span>
+        <strong>{{ fa.name }} vs {{ fb.name }}</strong>
+        <small>{{ m.weight_class }}</small>
+      </a>
+      {% endfor %}
+    </div>
+
+    {% if prelim_card %}
+    <div class="fight-card-group">
+      <div class="fight-card-group__header">
+        <span>Prelims</span>
+        <strong>{{ prelim_card|length }} fights</strong>
+      </div>
+      {% for m in prelim_card %}
+      {% set fa = m.fighter_a %}
+      {% set fb = m.fighter_b %}
+      <a href="/betting/{{ [fa.fighter_id, fb.fighter_id] | sort | join('_') }}" class="compact-fight-row">
+        <span>Bout {{ total_bouts - main_count - loop.index0 }}</span>
+        <strong>{{ fa.name }} vs {{ fb.name }}</strong>
+        <small>{{ m.weight_class }}</small>
+      </a>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if early_prelim_card %}
+    <div class="fight-card-group fight-card-group--early">
+      <div class="fight-card-group__header">
+        <span>Early Prelims</span>
+        <strong>{{ early_prelim_card|length }} fights</strong>
+      </div>
+      {% for m in early_prelim_card %}
+      {% set fa = m.fighter_a %}
+      {% set fb = m.fighter_b %}
+      <a href="/betting/{{ [fa.fighter_id, fb.fighter_id] | sort | join('_') }}" class="compact-fight-row">
+        <span>Bout {{ total_bouts - main_count - prelim_count - loop.index0 }}</span>
+        <strong>{{ fa.name }} vs {{ fb.name }}</strong>
+        <small>{{ m.weight_class }}</small>
+      </a>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+</section>
+
+<section class="landing-section">
+  <h2 class="section-heading">Combat Finance Toolkit</h2>
+  <div class="feature-grid-premium">
+    <a href="/betting" class="feature-tile">
+      <span class="feature-icon">01</span>
+      <h3>Edge Detection</h3>
+      <p>Compare sportsbook prices against model probability, implied odds, and fight-script logic.</p>
+    </a>
+    <a href="/bankroll" class="feature-tile">
+      <span class="feature-icon">02</span>
+      <h3>Bankroll Control</h3>
+      <p>EUR 500 base bankroll, 3-10% stake tiers, confidence caps, and card exposure protection.</p>
+    </a>
+    <a href="/check-movement" class="feature-tile">
+      <span class="feature-icon">03</span>
+      <h3>Movement Scan</h3>
+      <p>Freeze earlier prices, refresh Saturday odds, and spot steam, drift, or newly playable value.</p>
+    </a>
+    <a href="/fighters" class="feature-tile">
+      <span class="feature-icon">04</span>
+      <h3>Fight Intelligence</h3>
+      <p>Blend UFC stats, styles, finish profiles, recent form, and physical advantages into betting context.</p>
+    </a>
+  </div>
+</section>
+
+<section class="closing-stripe">
+  <div>
+    <span>Octagon IQ</span>
+    <strong>Built for sharp UFC decision-making before the cage door shuts.</strong>
+  </div>
+  <a href="/betting" class="btn btn--neon">Enter the Board</a>
+</section>
+
+{% endblock %}

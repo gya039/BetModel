@@ -1,0 +1,212 @@
+{% extends "base.html" %}
+{% block title %}Octagon IQ — {{ fighter.name }}{% endblock %}
+
+{% block content %}
+
+{% set f = fighter %}
+
+<section class="page-header page-header--fighter page-header--command">
+  <div class="breadcrumb"><a href="/fighters">← Fighters</a></div>
+  <div class="fighter-header-row">
+    <div class="fighter-header-avatar">
+      {% if f.get('photo') %}
+      <img src="{{ f.photo }}" alt="{{ f.name }}">
+      {% else %}
+      <span>{{ f.name.split()[0][0] }}{{ f.name.split()[-1][0] if f.name.split()|length > 1 else '' }}</span>
+      {% endif %}
+    </div>
+    <div>
+      <h1 class="page-title">{{ f.name }}</h1>
+      {% if f.get('nickname') %}<p class="page-sub">"{{ f.nickname }}"</p>{% endif %}
+      <div class="fighter-hero-tags">
+        {% if f.get('stance') %}<span>{{ f.stance }}</span>{% endif %}
+        {% if f.get('height_raw') %}<span>{{ f.height_raw }}</span>{% endif %}
+        {% if f.get('reach_raw') %}<span>{{ f.reach_raw }} reach</span>{% endif %}
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Bio Row -->
+<div class="fighter-profile">
+
+  <div class="profile-record">
+    <div class="big-record">
+      <span class="big-w">{{ f.get('wins', 0) }}</span><span class="big-dash">-</span><span class="big-l">{{ f.get('losses', 0) }}</span>{% if f.get('draws', 0) %}<span class="big-dash">-</span><span class="big-d">{{ f.draws }}</span>{% endif %}
+    </div>
+    <div class="big-record-label">W — L{% if f.get('draws', 0) %} — D{% endif %}</div>
+    {% if f.get('nc', 0) %}<div class="nc-note">{{ f.nc }} NC</div>{% endif %}
+
+    <div class="streak-badge {% if f.get('current_streak', 0) > 0 %}streak--win{% elif f.get('current_streak', 0) < 0 %}streak--loss{% else %}streak--none{% endif %}">
+      {% set s = f.get('current_streak', 0) %}
+      {% if s > 0 %}{{ s }}-Fight Win Streak
+      {% elif s < 0 %}{{ s|abs }}-Fight Loss Streak
+      {% else %}No Active Streak{% endif %}
+    </div>
+  </div>
+
+  <div class="profile-bio">
+    <h3 class="profile-section-title">Physical</h3>
+    <div class="bio-grid">
+      {% if f.get('height_raw') %}<div class="bio-item"><span class="bio-lbl">Height</span><span class="bio-val">{{ f.height_raw }}</span></div>{% endif %}
+      {% if f.get('weight_raw') %}<div class="bio-item"><span class="bio-lbl">Weight</span><span class="bio-val">{{ f.weight_raw }}</span></div>{% endif %}
+      {% if f.get('reach_raw') %}<div class="bio-item"><span class="bio-lbl">Reach</span><span class="bio-val">{{ f.reach_raw }}</span></div>{% endif %}
+      {% if f.get('stance') %}<div class="bio-item"><span class="bio-lbl">Stance</span><span class="bio-val">{{ f.stance }}</span></div>{% endif %}
+      {% if f.get('age') %}<div class="bio-item"><span class="bio-lbl">Age</span><span class="bio-val">~{{ f.age | int }}</span></div>{% endif %}
+      {% if f.get('dob') %}<div class="bio-item"><span class="bio-lbl">DOB</span><span class="bio-val">{{ f.dob }}</span></div>{% endif %}
+    </div>
+  </div>
+
+  <div class="profile-career">
+    <h3 class="profile-section-title">Career Stats</h3>
+    <div class="bio-grid">
+      {% if f.get('slpm') is not none %}<div class="bio-item"><span class="bio-lbl">Strikes landed/min</span><span class="bio-val">{{ f.slpm }}</span></div>{% endif %}
+      {% if f.get('str_acc') is not none %}<div class="bio-item"><span class="bio-lbl">Strike accuracy</span><span class="bio-val">{{ "%.0f"|format(f.str_acc * 100) }}%</span></div>{% endif %}
+      {% if f.get('sapm') is not none %}<div class="bio-item"><span class="bio-lbl">Strikes absorbed/min</span><span class="bio-val">{{ f.sapm }}</span></div>{% endif %}
+      {% if f.get('str_def') is not none %}<div class="bio-item"><span class="bio-lbl">Strike defence</span><span class="bio-val">{{ "%.0f"|format(f.str_def * 100) }}%</span></div>{% endif %}
+      {% if f.get('td_avg') is not none %}<div class="bio-item"><span class="bio-lbl">Takedowns/15m</span><span class="bio-val">{{ f.td_avg }}</span></div>{% endif %}
+      {% if f.get('td_acc') is not none %}<div class="bio-item"><span class="bio-lbl">Takedown accuracy</span><span class="bio-val">{{ "%.0f"|format(f.td_acc * 100) }}%</span></div>{% endif %}
+      {% if f.get('td_def') is not none %}<div class="bio-item"><span class="bio-lbl">Takedown defence</span><span class="bio-val">{{ "%.0f"|format(f.td_def * 100) }}%</span></div>{% endif %}
+      {% if f.get('sub_avg') is not none %}<div class="bio-item"><span class="bio-lbl">Sub attempts/15m</span><span class="bio-val">{{ f.sub_avg }}</span></div>{% endif %}
+    </div>
+  </div>
+
+</div><!-- .fighter-profile -->
+
+{% if f.get('profile') %}
+<!-- Fighter Profile -->
+<div class="section">
+  <div class="fighter-profile-card">
+    <div class="profile-card-icon">🥊</div>
+    <div class="profile-card-text">{{ f.profile }}</div>
+  </div>
+</div>
+{% endif %}
+
+<!-- Charts Row -->
+<div class="section">
+  <div class="section-heading-row">
+    <h2 class="section-heading">Win / Loss Breakdown</h2>
+    <div class="promo-toggle" id="promoToggle">
+      <button class="promo-btn promo-btn--active" data-filter="all">All Comps</button>
+      <button class="promo-btn" data-filter="ufc">UFC Only</button>
+    </div>
+  </div>
+  <div class="charts-row">
+
+    <div class="chart-card">
+      <h4 class="chart-title">Wins by Method</h4>
+      <div class="chart-wrap">
+        <canvas id="winsChart"></canvas>
+      </div>
+      <div class="method-legend" id="winsLegend"></div>
+    </div>
+
+    <div class="chart-card">
+      <h4 class="chart-title">Losses by Method</h4>
+      <div class="chart-wrap">
+        <canvas id="lossesChart"></canvas>
+      </div>
+      <div class="method-legend" id="lossesLegend"></div>
+    </div>
+
+    <div class="chart-card">
+      <h4 class="chart-title">Striking & Grappling Avg</h4>
+      <div class="chart-wrap">
+        <canvas id="strikingChart"></canvas>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Per-fight averages -->
+<div class="section">
+  <h2 class="section-heading">Per-Fight Averages</h2>
+  <div class="stats-row">
+    {% set stats = [
+      ('Sig Strikes Landed', f.get('avg_sig_strikes_landed')),
+      ('Total Strikes',       f.get('avg_total_strikes_landed')),
+      ('Takedowns',           f.get('avg_takedowns_landed')),
+      ('Sig Strikes (L3)',    f.get('avg_sig_strikes_last3')),
+      ('Sig Strikes (L5)',    f.get('avg_sig_strikes_last5')),
+      ('TDs (L3)',            f.get('avg_td_last3')),
+      ('TDs (L5)',            f.get('avg_td_last5')),
+      ('Finish Rate',         f.get('finish_rate')),
+      ('Decision Rate',       f.get('decision_rate')),
+    ] %}
+    {% for label, val in stats %}
+    <div class="stat-block">
+      <div class="stat-block__val">{{ val if val is not none else '—' }}{% if 'Rate' in label and val is not none %}%{% endif %}</div>
+      <div class="stat-block__lbl">{{ label }}</div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<!-- Fight History -->
+{% if f.get('fight_history') %}
+<div class="section">
+  <h2 class="section-heading">Fight History</h2>
+
+  {% set tracked = f.fight_history | length %}
+  {% set official = f.get('wins', 0) + f.get('losses', 0) + f.get('draws', 0) %}
+  {% if tracked < official %}
+  <div class="data-notice">
+    <strong>{{ official }}-fight official record · {{ tracked }} fight{{ 's' if tracked != 1 }} tracked via UFCStats.</strong>
+    {{ official - tracked }} additional fight{{ 's' if (official - tracked) != 1 }} from other promotions are not available in UFCStats — per-fight strike and grappling stats for those bouts are unavailable.
+  </div>
+  {% endif %}
+
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Result</th>
+          <th>Opponent</th>
+          <th>Promotion</th>
+          <th>Method</th>
+          <th>Rd</th>
+          <th>Time</th>
+          <th>Event</th>
+          <th>Sig Str</th>
+          <th>TD</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for fight in f.fight_history %}
+        <tr>
+          <td><span class="result-badge result-badge--{{ fight.result | lower }}">{{ fight.result }}</span></td>
+          <td class="td-opponent">{{ fight.get('opponent', '—') }}</td>
+          <td><span class="promo-tag promo-tag--{{ 'ufc' if fight.get('promotion','') == 'UFC' else 'other' }}">{{ fight.get('promotion', '—') }}</span></td>
+          <td><span class="method-tag method-tag--{{ fight.get('method','other') | lower | replace('/', '') | replace(' ', '') }}">{{ fight.get('method', '—') }}</span></td>
+          <td>{{ fight.get('round', '—') }}</td>
+          <td>{{ fight.get('time', '—') }}</td>
+          <td class="td-event">{{ fight.get('event', '—') }}</td>
+          <td>{{ fight.get('sig_strikes_landed', '—') }}</td>
+          <td>{{ fight.get('td_landed', '—') }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const fighter = {{ fighter | tojson }};
+  renderFighterCharts(fighter, 'all');
+
+  // Promo toggle
+  document.getElementById('promoToggle').addEventListener('click', function(e) {
+    const btn = e.target.closest('.promo-btn');
+    if (!btn) return;
+    this.querySelectorAll('.promo-btn').forEach(b => b.classList.remove('promo-btn--active'));
+    btn.classList.add('promo-btn--active');
+    renderFighterCharts(fighter, btn.dataset.filter);
+  });
+</script>
+{% endblock %}

@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+{% block title %}Octagon IQ — {{ fighter_a.name }} vs {{ fighter_b.name }}{% endblock %}
+
+{% block content %}
+
+{% set fa = fighter_a %}
+{% set fb = fighter_b %}
+
+<section class="page-header">
+  <div class="breadcrumb"><a href="/">← Card</a></div>
+  <h1 class="page-title matchup-title">
+    <a href="/fighter/{{ fa.fighter_id }}">{{ fa.name }}</a>
+    <span class="matchup-vs">VS</span>
+    <a href="/fighter/{{ fb.fighter_id }}">{{ fb.name }}</a>
+  </h1>
+  {% if fa.get('weight_class') or fb.get('weight_class') %}
+  <p class="page-sub">{{ fa.get('weight_class', fb.get('weight_class', '')) }}</p>
+  {% endif %}
+</section>
+
+<!-- Record & Physical Comparison -->
+<div class="section">
+  <h2 class="section-heading">Records & Physical</h2>
+  <div class="compare-header">
+
+    <div class="compare-side compare-side--left">
+      <div class="compare-name"><a href="/fighter/{{ fa.fighter_id }}">{{ fa.name }}</a></div>
+      {% if fa.get('nickname') %}<div class="compare-nick">"{{ fa.nickname }}"</div>{% endif %}
+      <div class="compare-record">
+        <span class="big-w">{{ fa.get('wins',0) }}</span>-<span class="big-l">{{ fa.get('losses',0) }}</span>{% if fa.get('draws',0) %}-<span class="big-d">{{ fa.draws }}</span>{% endif %}
+      </div>
+      {% set s = fa.get('current_streak', 0) %}
+      {% if s != 0 %}
+      <div class="streak-badge {% if s > 0 %}streak--win{% else %}streak--loss{% endif %}">
+        {% if s > 0 %}{{ s }}W Streak{% else %}{{ s|abs }}L Streak{% endif %}
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="compare-center-badge">HEAD TO HEAD</div>
+
+    <div class="compare-side compare-side--right">
+      <div class="compare-name"><a href="/fighter/{{ fb.fighter_id }}">{{ fb.name }}</a></div>
+      {% if fb.get('nickname') %}<div class="compare-nick">"{{ fb.nickname }}"</div>{% endif %}
+      <div class="compare-record">
+        <span class="big-w">{{ fb.get('wins',0) }}</span>-<span class="big-l">{{ fb.get('losses',0) }}</span>{% if fb.get('draws',0) %}-<span class="big-d">{{ fb.draws }}</span>{% endif %}
+      </div>
+      {% set s = fb.get('current_streak', 0) %}
+      {% if s != 0 %}
+      <div class="streak-badge {% if s > 0 %}streak--win{% else %}streak--loss{% endif %}">
+        {% if s > 0 %}{{ s }}W Streak{% else %}{{ s|abs }}L Streak{% endif %}
+      </div>
+      {% endif %}
+    </div>
+
+  </div>
+
+  <!-- Attribute comparison bars -->
+  <div class="attr-compare">
+    {% set attrs = [
+      ('Height (in)',  fa.get('height_in'),  fb.get('height_in'),  fa.get('height_raw','—'),  fb.get('height_raw','—')),
+      ('Reach (in)',   fa.get('reach_in'),   fb.get('reach_in'),   fa.get('reach_raw','—'),   fb.get('reach_raw','—')),
+      ('Age',          fa.get('age'),        fb.get('age'),        fa.get('age','—'),          fb.get('age','—')),
+    ] %}
+    {% for label, va, vb, ra, rb in attrs %}
+    {% if va is not none and vb is not none %}
+    <div class="attr-row">
+      <div class="attr-val attr-val--left">{{ ra }}</div>
+      <div class="attr-bar-wrap">
+        <div class="attr-label">{{ label }}</div>
+        <div class="attr-bar">
+          {% set total = va + vb %}
+          {% set pct_a = (va / total * 100) | round(1) if total else 50 %}
+          <div class="attr-bar-fill attr-bar-fill--a" style="width:{{ pct_a }}%"></div>
+        </div>
+      </div>
+      <div class="attr-val attr-val--right">{{ rb }}</div>
+    </div>
+    {% endif %}
+    {% endfor %}
+  </div>
+</div>
+
+<!-- Radar chart -->
+<div class="section">
+  <h2 class="section-heading">Stat Comparison</h2>
+  <div class="radar-wrap">
+    <canvas id="radarChart" width="500" height="500"></canvas>
+  </div>
+</div>
+
+<!-- Side-by-side stats table -->
+<div class="section">
+  <h2 class="section-heading">Career Stats</h2>
+  <div class="table-wrap">
+    <table class="compare-table">
+      <thead>
+        <tr>
+          <th class="th-left">{{ fa.name }}</th>
+          <th class="th-mid">Stat</th>
+          <th class="th-right">{{ fb.name }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% set rows = [
+          ('Strikes landed/min', fa.get('slpm'),      fb.get('slpm'),       None, 'higher'),
+          ('Str Accuracy',      fa.get('str_acc'),    fb.get('str_acc'),    'pct', 'higher'),
+          ('Strikes absorbed/min', fa.get('sapm'),    fb.get('sapm'),       None, 'lower'),
+          ('Str Defence',       fa.get('str_def'),    fb.get('str_def'),    'pct', 'higher'),
+          ('Takedowns / 15m',   fa.get('td_avg'),     fb.get('td_avg'),     None, 'higher'),
+          ('TD Accuracy',       fa.get('td_acc'),     fb.get('td_acc'),     'pct', 'higher'),
+          ('TD Defence',        fa.get('td_def'),     fb.get('td_def'),     'pct', 'higher'),
+          ('Sub attempts / 15m', fa.get('sub_avg'),   fb.get('sub_avg'),    None, 'higher'),
+          ('Finish Rate',       fa.get('finish_rate'), fb.get('finish_rate'), 'pct_val', 'higher'),
+          ('Decision Rate',     fa.get('decision_rate'), fb.get('decision_rate'), 'pct_val', 'lower'),
+          ('Win Rate',          fa.get('win_rate'),   fb.get('win_rate'),   'pct_val', 'higher'),
+          ('Avg Sig Strikes',   fa.get('avg_sig_strikes_landed'), fb.get('avg_sig_strikes_landed'), None, 'higher'),
+          ('Avg Total Strikes', fa.get('avg_total_strikes_landed'), fb.get('avg_total_strikes_landed'), None, 'higher'),
+          ('Avg Takedowns',     fa.get('avg_takedowns_landed'), fb.get('avg_takedowns_landed'), None, 'higher'),
+        ] %}
+        {% for label, va, vb, fmt, better in rows %}
+        {% if va is not none or vb is not none %}
+        <tr>
+          <td class="td-stat-a {% if va is not none and vb is not none %}{% if (better == 'higher' and va > vb) or (better == 'lower' and va < vb) %}td-winner{% endif %}{% endif %}">
+            {% if fmt == 'pct' and va is not none %}{{ "%.0f"|format(va * 100) }}%
+            {% elif fmt == 'pct_val' and va is not none %}{{ va }}%
+            {% elif va is not none %}{{ va }}
+            {% else %}—{% endif %}
+          </td>
+          <td class="td-stat-label">{{ label }}</td>
+          <td class="td-stat-b {% if va is not none and vb is not none %}{% if (better == 'higher' and vb > va) or (better == 'lower' and vb < va) %}td-winner{% endif %}{% endif %}">
+            {% if fmt == 'pct' and vb is not none %}{{ "%.0f"|format(vb * 100) }}%
+            {% elif fmt == 'pct_val' and vb is not none %}{{ vb }}%
+            {% elif vb is not none %}{{ vb }}
+            {% else %}—{% endif %}
+          </td>
+        </tr>
+        {% endif %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Method of Victory comparison -->
+<div class="section">
+  <h2 class="section-heading">Method of Victory</h2>
+  <div class="charts-row charts-row--two">
+    <div class="chart-card">
+      <h4 class="chart-title">{{ fa.name }} — Wins</h4>
+      <div class="chart-wrap chart-wrap--sm">
+        <canvas id="winsChartA"></canvas>
+      </div>
+    </div>
+    <div class="chart-card">
+      <h4 class="chart-title">{{ fb.name }} — Wins</h4>
+      <div class="chart-wrap chart-wrap--sm">
+        <canvas id="winsChartB"></canvas>
+      </div>
+    </div>
+    <div class="chart-card">
+      <h4 class="chart-title">{{ fa.name }} — Losses</h4>
+      <div class="chart-wrap chart-wrap--sm">
+        <canvas id="lossesChartA"></canvas>
+      </div>
+    </div>
+    <div class="chart-card">
+      <h4 class="chart-title">{{ fb.name }} — Losses</h4>
+      <div class="chart-wrap chart-wrap--sm">
+        <canvas id="lossesChartB"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const fighterA = {{ fighter_a | tojson }};
+  const fighterB = {{ fighter_b | tojson }};
+  renderMatchupCharts(fighterA, fighterB);
+</script>
+{% endblock %}

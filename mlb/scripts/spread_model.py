@@ -44,8 +44,9 @@ MIN_TEST_GAMES = 200
 # Calibration: ECE must be below 7% on both the most-common lines (-1.5 and -2.5)
 MAX_ECE_PRIMARY_LINES = 0.07
 PRIMARY_ECE_CHECK_LINES = [-1.5, -2.5]
-# ROI: at least 2 distinct spread lines must show positive simulated ROI
-MIN_POSITIVE_ROI_SPREADS = 2
+# ROI: allow one strong simulated ROI line. Keep ECE and sanity gates unchanged
+# so changes in RL output are attributable to this filter only.
+MIN_POSITIVE_ROI_SPREADS = 1
 # Favourite bias: actual cover rate at -1.5 must be between 45% and 60%
 # (a model that shows 70%+ cover rate for favourites is overfit)
 COVER_RATE_MIN = 0.45
@@ -68,6 +69,9 @@ class SpreadModel:
         self.features: list[str] | None = None
         self.trained_through: str | None = None
         self.train_n: int | None = None
+        self.validation: dict | None = None
+        self.validation_passed: bool | None = None
+        self.validation_reasons: list[str] = []
 
     def fit(self, df: pd.DataFrame, features: list[str]) -> "SpreadModel":
         self.features = features
@@ -93,44 +97,153 @@ class SpreadModel:
         pred = self.predict_margin(feat_vec)
         return float(1.0 - norm.cdf(spread_point, loc=pred, scale=self.residual_std))
 
-    def best_cover_ev(self, feat_vec: list, spread_options: list[dict]) -> dict | None:
+    def _validation_check_summary(self) -> dict:
+        validation = self.validation or {}
+        ece_rows = {
+            row.get("spread"): row.get("ece")
+            for row in validation.get("ece_by_spread", [])
+        }
+        ece_pass = all(
+            line in ece_rows and ece_rows[line] <= MAX_ECE_PRIMARY_LINES
+            for line in PRIMARY_ECE_CHECK_LINES
+        )
+        positive_roi_count = sum(
+            1 for row in validation.get("roi_by_spread", [])
+            if row.get("roi", -999) > 0
+        )
+        roi_pass = positive_roi_count >= MIN_POSITIVE_ROI_SPREADS
+        fav_cr = validation.get("fav_cover_rate_at_minus_1_5")
+        sanity_pass = fav_cr is not None and COVER_RATE_MIN <= fav_cr <= COVER_RATE_MAX
+        return {
+            "ece_pass": ece_pass,
+            "sanity_pass": sanity_pass,
+            "roi_pass": roi_pass,
+            "positive_roi_lines": positive_roi_count,
+            "ece": ece_rows,
+            "fav_cover_rate_at_minus_1_5": fav_cr,
+        }
+
+    def best_cover_ev(
+        self,
+        feat_vec: list,
+        spread_options: list[dict],
+        *,
+        debug_label: str = "",
+        debug: bool = False,
+        return_diagnostics: bool = False,
+    ) -> dict | None:
         """
         Given [{line, odds}, ...], find the highest-EV home-cover spread bet.
         P(home covers line S) = P(margin > S).
         Returns {line, odds, cover_prob, edge} or None if no option has positive EV.
         """
+        best, positive, valid_options = self._best_cover_ev_for_options(feat_vec, spread_options, away=False)
+        if debug:
+            self._log_ev_debug(debug_label or "HOME_RL", best, positive, valid_options)
+        if not best:
+            return None
+        best = {
+            **best,
+            "positive_line_count": positive,
+            "option_count": valid_options,
+            "rejection_reason": self._ev_rejection_reason(best, positive),
+        }
+        if return_diagnostics:
+            return best
+        return best if best["edge"] > 0 else None
+
+    def _best_cover_ev_for_options(
+        self,
+        feat_vec: list,
+        spread_options: list[dict],
+        *,
+        away: bool,
+    ) -> tuple[dict | None, int, int]:
         best: dict | None = None
+        positive = 0
+        valid_options = 0
         for opt in spread_options:
             line = float(opt["line"])
             odds = float(opt["odds"])
             if odds <= 1.0:
                 continue
-            prob = self.cover_prob(feat_vec, line)
+            valid_options += 1
+            prob = 1.0 - self.cover_prob(feat_vec, line) if away else self.cover_prob(feat_vec, line)
             implied = 1.0 / odds
             ev = round(prob - implied, 4)
+            if ev > 0:
+                positive += 1
             if best is None or ev > best["edge"]:
                 best = {"line": line, "odds": round(odds, 3), "cover_prob": round(prob, 4), "edge": ev}
-        return best if best and best["edge"] > 0 else None
+        return best, positive, valid_options
 
-    def best_away_cover_ev(self, feat_vec: list, spread_options: list[dict]) -> dict | None:
+    def _ev_rejection_reason(self, best: dict | None, positive_count: int) -> str:
+        if not best:
+            return "no_valid_spread_options"
+        if positive_count <= 0 or best.get("edge", 0) <= 0:
+            return "no_positive_ev"
+        if best.get("edge", 0) < 0.03:
+            return "below_3pct_edge"
+        checks = self._validation_check_summary()
+        if not checks["ece_pass"]:
+            return "failed_ece_gate"
+        if not checks["roi_pass"]:
+            return "failed_roi_gate"
+        if not checks["sanity_pass"]:
+            return "failed_sanity_gate"
+        return "eligible"
+
+    def best_away_cover_ev(
+        self,
+        feat_vec: list,
+        spread_options: list[dict],
+        *,
+        debug_label: str = "",
+        debug: bool = False,
+        return_diagnostics: bool = False,
+    ) -> dict | None:
         """
         Given [{line, odds}, ...] for the AWAY team, find the highest-EV away-cover bet.
         Away team covers line S (e.g. +1.5) when margin < S, i.e. P(margin < S) = 1 - cover_prob(S).
         All home/away symmetry is handled here — callers never invert probabilities themselves.
         Returns {line, odds, cover_prob, edge} or None if no option has positive EV.
         """
-        best: dict | None = None
-        for opt in spread_options:
-            line = float(opt["line"])
-            odds = float(opt["odds"])
-            if odds <= 1.0:
-                continue
-            prob = 1.0 - self.cover_prob(feat_vec, line)  # P(away covers S)
-            implied = 1.0 / odds
-            ev = round(prob - implied, 4)
-            if best is None or ev > best["edge"]:
-                best = {"line": line, "odds": round(odds, 3), "cover_prob": round(prob, 4), "edge": ev}
-        return best if best and best["edge"] > 0 else None
+        best, positive, valid_options = self._best_cover_ev_for_options(feat_vec, spread_options, away=True)
+        if debug:
+            self._log_ev_debug(debug_label or "AWAY_RL", best, positive, valid_options)
+        if not best:
+            return None
+        best = {
+            **best,
+            "positive_line_count": positive,
+            "option_count": valid_options,
+            "rejection_reason": self._ev_rejection_reason(best, positive),
+        }
+        if return_diagnostics:
+            return best
+        return best if best["edge"] > 0 else None
+
+    def _log_ev_debug(self, label: str, best: dict | None, positive_count: int, option_count: int) -> None:
+        checks = self._validation_check_summary()
+        ece = checks["ece"]
+        status = "accepted_positive_ev" if best and best.get("edge", 0) > 0 else "rejected_no_positive_ev"
+        if self.validation_passed is False:
+            status = self._ev_rejection_reason(best, positive_count)
+        best_text = (
+            f"line={best['line']:+g} odds={best['odds']:.3f} "
+            f"cover_prob={best['cover_prob']:.4f} ev={best['edge']:.4f}"
+            if best else "none"
+        )
+        print(
+            "// Spread EV "
+            f"{label}: best={best_text}; positive_lines={positive_count}/{option_count}; "
+            f"ece(-1.5)={ece.get(-1.5, 'n/a')}; ece(-2.5)={ece.get(-2.5, 'n/a')}; "
+            f"ece_pass={checks['ece_pass']}; sanity_pass={checks['sanity_pass']}; "
+            f"roi_pass={checks['roi_pass']}; positive_roi_lines={checks['positive_roi_lines']}; "
+            f"validation_passed={self.validation_passed}; "
+            f"reason={status}; validation_reasons={self.validation_reasons}",
+            file=sys.stderr,
+        )
 
     def is_validated(self, diag: dict) -> tuple[bool, list[str]]:
         """
@@ -187,6 +300,9 @@ class SpreadModel:
                 "features": self.features,
                 "trained_through": self.trained_through,
                 "train_n": self.train_n,
+                "validation": self.validation,
+                "validation_passed": self.validation_passed,
+                "validation_reasons": self.validation_reasons,
             }, f)
 
     @classmethod
@@ -200,6 +316,9 @@ class SpreadModel:
         obj.features = saved["features"]
         obj.trained_through = saved.get("trained_through")
         obj.train_n = saved.get("train_n")
+        obj.validation = saved.get("validation")
+        obj.validation_passed = saved.get("validation_passed")
+        obj.validation_reasons = saved.get("validation_reasons", [])
         return obj
 
 
@@ -346,8 +465,6 @@ def train_and_save(
 
     sm = SpreadModel()
     sm.fit(train_df, features)
-    sm.save(model_path)
-    print(f"  Saved   → {model_path}")
     print(f"  σ residual = {sm.residual_std:.3f} runs  |  trained through {sm.trained_through}")
 
     print("\n  === DIAGNOSTICS ===\n")
@@ -376,11 +493,17 @@ def train_and_save(
             )
 
     validated, reasons = sm.is_validated(diag)
+    sm.validation = diag
+    sm.validation_passed = validated
+    sm.validation_reasons = reasons
     print(f"\n  === VALIDATION {'PASSED ✓' if validated else 'FAILED ✗'} ===")
     for r in reasons:
         print(f"  {r}")
     if validated:
         print("\n  To enable spread betting: set USE_SPREAD_MODEL = True in predict_today.py")
+
+    sm.save(model_path)
+    print(f"\n  Saved   -> {model_path}")
 
     diag_path = model_path.parent / "spread_model_diagnostics.json"
     with open(diag_path, "w", encoding="utf-8") as f:

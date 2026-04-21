@@ -1,0 +1,891 @@
+{
+  "date": "2026-04-16",
+  "bankroll": 538.4,
+  "predictions": [
+    {
+      "gamePk": 823396,
+      "homeTeam": "Pittsburgh Pirates",
+      "awayTeam": "Washington Nationals",
+      "homeAbbr": "PIT",
+      "awayAbbr": "WSH",
+      "homeProb": 0.4826,
+      "awayProb": 0.5174,
+      "pickSide": "none",
+      "modelProb": 0.5174,
+      "edge": 0.0,
+      "stake": {
+        "pct": "0%",
+        "pctValue": 0,
+        "eur": 0.0,
+        "label": "pass",
+        "reportLabel": "PASS"
+      },
+      "hasRolling": true,
+      "awayMl": 2.3,
+      "homeMl": 1.6,
+      "awayRl": 4.0,
+      "homeRl": 2.38,
+      "useRl": false,
+      "rlPickOdds": null,
+      "awayImplied": 0.4348,
+      "homeImplied": 0.625,
+      "pickOdds": null,
+      "marketImplied": null,
+      "bookCount": 25,
+      "hasOdds": true,
+      "homeBook": "paddypower",
+      "awayBook": "boylesports",
+      "homeSpName": "Braxton Ashcraft",
+      "awaySpName": "Foster Griffin",
+      "homeSpEra": 2.12,
+      "awaySpEra": 1.76,
+      "homeSpWhip": 1.0,
+      "awaySpWhip": 1.11,
+      "homeSpW": 1,
+      "homeSpL": 1,
+      "awaySpW": 2,
+      "awaySpL": 0,
+      "homeL10WP": 0.6,
+      "awayL10WP": 0.5,
+      "homeL10RD": 1.5,
+      "awayL10RD": -0.9,
+      "eraDiff": 0.36,
+      "seriesGameNumber": 4,
+      "gamesInSeries": 4,
+      "homeRlOptions": [
+        {
+          "line": -1.5,
+          "odds": 2.4
+        },
+        {
+          "line": -1.0,
+          "odds": 2.0
+        },
+        {
+          "line": 2.5,
+          "odds": 1.22
+        }
+      ],
+      "awayRlOptions": [
+        {
+          "line": -2.5,
+          "odds": 4.0
+        },
+        {
+          "line": 1.0,
+          "odds": 1.83
+        },
+        {
+          "line": 1.5,
+          "odds": 1.69
+        }
+      ]
+    },
+    {
+      "gamePk": 824530,
+      "homeTeam": "Cincinnati Reds",
+      "awayTeam": "San Francisco Giants",
+      "homeAbbr": "CIN",
+      "awayAbbr": "SF",
+      "homeProb": 0.5398,
+      "awayProb": 0.4602,
+      "pickSide": "none",
+      "modelProb": 0.5398,
+      "edge": 0.0,
+      "stake": {
+        "pct": "0%",
+        "pctValue": 0,
+        "eur": 0.0,
+        "label": "pass",
+        "reportLabel": "PASS"
+      },
+      "hasRolling": true,
+      "awayMl": 2.05,
+      "homeMl": 1.75,
+      "awayRl": 3.7,
+      "homeRl": 2.68,
+      "useRl": false,
+      "rlPickOdds": null,
+      "awayImplied": 0.4878,
+      "homeImplied": 0.5714,
+      "pickOdds": null,
+      "marketImplied": null,
+      "bookCount": 25,
+      "hasOdds": true,
+      "homeBook": "paddypower",
+      "awayBook": "boylesports",
+      "homeSpName": "Chase Burns",
+      "awaySpName": "Landen Roupp",
+      "homeSpEra": 3.31,
+      "awaySpEra": 3.24,
+      "homeSpWhip": 1.29,
+      "awaySpWhip": 1.14,
+      "homeSpW": 1,
+      "homeSpL": 1,
+      "awaySpW": 2,
+      "awaySpL": 1,
+      "homeL10WP": 0.6,
+      "awayL10WP": 0.3,
+      "homeL10RD": -0.5,
+      "awayL10RD": -1.4,
+      "eraDiff": 0.07,
+      "seriesGameNumber": 3,
+      "gamesInSeries": 3,
+      "homeRlOptions": [
+        {
+          "line": -1.5,
+          "odds": 2.68
+        },
+        {
+          "line": -1.0,
+          "odds": 2.18
+        },
+        {
+          "line": 1.5,
+          "odds": 1.48
+        },
+        {
+          "line": 2.5,
+          "odds": 1.25
+        }
+      ],
+      "awayRlOptions": [
+        {
+          "line": -2.5,
+          "odds": 3.7
+        },
+        {
+          "line": -1.5,
+          "odds": 2.7
+        },
+        {
+          "line": 1.0,
+          "odds": 1.7
+        },
+        {
+          "line": 1.5,
+          "odds": 1.54
+        }
+      ]
+    },
+    {
+      "gamePk": 824289,
+      "homeTeam": "Detroit Tigers",
+      "awayTeam": "Kansas City Royals",
+      "homeAbbr": "DET",
+      "awayAbbr": "KC",
+      "homeProb": 0.6582,
+      "awayProb": 0.3418,
+      "pickSide": "home",
+      "modelProb": 0.6582,
+      "edge": 0.1454,
+      "stake": {
+        "pct": "3%",
+        "pctValue": 3,
+        "eur": 15.0,
+        "label": "mid",
+        "reportLabel": "3% (EUR 15.00)"
+      },
+      "hasRolling": true,
+      "awayMl": 1.83,
+      "homeMl": 1.95,
+      "awayRl": 3.2,
+      "homeRl": 1.78,
+      "useRl": false,
+      "rlPickOdds": null,
+      "awayImplied": 0.5464,
+      "homeImplied": 0.5128,
+      "pickOdds": 1.95,
+      "marketImplied": 0.5128,
+      "bookCount": 25,
+      "hasOdds": true,
+      "homeBook": "paddypower",
+      "awayBook": "boylesports",
+      "homeSpName": "Keider Montero",
+      "awaySpName": "Kris Bubic",
+      "homeSpEra": 1.74,
+      "awaySpEra": 2.5,
+      "homeSpWhip": 0.68,
+      "awaySpWhip": 0.83,
+      "homeSpW": 1,
+      "homeSpL": 1,
+      "awaySpW": 2,
+      "awaySpL": 1,
+      "homeL10WP": 0.5,
+      "awayL10WP": 0.3,
+      "homeL10RD": 0.3,
+      "awayL10RD": -1.1,
+      "eraDiff": -0.76,
+      "seriesGameNumber": 3,
+      "gamesInSeries": 3,
+      "homeRlOptions": [
+        {
+          "line": 1.0,
+          "odds": 1.78
+        },
+        {
+          "line": 1.5,
+          "odds": 1.63
+        },
+        {
+          "line": 2.5,
+          "odds": 1.33
+        }
+      ],
+      "awayRlOptions": [
+        {
+          "line": -2.5,
+          "odds": 3.2
+        },
+        {
+          "line": -1.5,
+          "odds": 2.52
+        },
+        {
+          "line": -1.0,
+          "odds": 2.07
+        }
+      ]
+    },
+    {
+      "gamePk": 823560,
+      "homeTeam": "New York Yankees",
+      "awayTeam": "Los Angeles Angels",
+      "homeAbbr": "NYY",
+      "awayAbbr": "LAA",
+      "homeProb": 0.5488,
+      "awayProb": 0.4512,
+      "pickSide": "none",
+      "modelProb": 0.5488,
+      "edge": 0.0,
+      "stake": {
+        "pct": "0%",
+        "pctValue": 0,
+        "eur": 0.0,
+        "label": "pass",
+        "reportLabel": "PASS"
+      },
+      "hasRolling": true,
+      "awayMl": 3.3,
+      "homeMl": 1.33,
+      "awayRl": 5.5,
+      "homeRl": 2.1,
+      "useRl": false,
+      "rlPickOdds": null,
+      "awayImplied": 0.303,
+      "homeImplied": 0.7519,
+      "pickOdds": null,
+      "marketImplied": null,
+      "bookCount": 25,
+      "hasOdds": true,
+      "homeBook": "boylesports",
+      "awayBook": "paddypower",
+      "homeSpName": "Max Fried",
+      "awaySpName": "Brent Suter",
+      "homeSpEra": 1.93,
+      "awaySpEra": 2.08,
+      "homeSpWhip": 0.75,
+      "awaySpWhip": 1.08,
+      "homeSpW": 2,
+      "homeSpL": 0,
+      "awaySpW": 0,
+      "awaySpL": 1,
+      "homeL10WP": 0.3,
+      "awayL10WP": 0.5,
+      "homeL10RD": -0.9,
+      "awayL10RD": 0.5,
+      "eraDiff": -0.15,
+      "seriesGameNumber": 4,
+      "gamesInSeries": 4,
+      "homeRlOptions": [
+        {
+          "line": -2.5,
+          "odds": 2.1
+        },
+        {
+          "line": -2.0,
+          "odds": 1.88
+        },
+        {
+          "line": -1.5,
+          "odds": 1.77
+        },
+        {
+          "line": 2.5,
+          "odds": 1.12
+        }
+      ],
+      "awayRlOptions": [
+        {
+          "line": -2.5,
+          "odds": 5.5
+        },
+        {
+          "line": 1.5,
+          "odds": 2.26
+        },
+        {
+          "line": 2.0,
+          "odds": 1.93
+        },
+        {
+          "line": 2.5,
+          "odds": 1.81
+        }
+      ]
+    },
+    {
+      "gamePk": 823801,
+      "homeTeam": "Milwaukee Brewers",
+      "awayTeam": "Toronto Blue Jays",
+      "homeAbbr": "MIL",
+      "awayAbbr": "TOR",
+      "homeProb": 0.387,
+      "awayProb": 0.613,
+      "pickSide": "away",
+      "modelProb": 0.613,
+      "edge": 0.1252,
+      "stake": {
+        "pct": "3%",
+        "pctValue": 3,
+        "eur": 15.0,
+        "label": "mid",
+        "reportLabel": "3% (EUR 15.00)"
+      },
+      "hasRolling": true,
+      "awayMl": 2.05,
+      "homeMl": 1.75,
+      "awayRl": 3.5,
+      "homeRl": 2.66,
+      "useRl": false,
+      "rlPickOdds": null,
+      "awayImplied": 0.4878,
+      "homeImplied": 0.5714,
+      "pickOdds": 2.05,
+      "marketImplied": 0.4878,
+      "bookCount": 25,
+      "hasOdds": true,
+      "homeBook": "paddypower",
+      "awayBook": "boylesports",
+      "homeSpName": "Brandon Sproat",
+      "awaySpName": "Patrick Corbin",
+      "homeSpEra": 10.45,
+      "awaySpEra": 9.0,
+      "homeSpWhip": 2.32,
+      "awaySpWhip": 1.75,
+      "homeSpW": 0,
+      "homeSpL": 1,
+      "awaySpW": 0,
+      "awaySpL": 0,
+      "homeL10WP": 0.3,
+      "awayL10WP": 0.3,
+      "homeL10RD": -1.6,
+      "awayL10RD": -2.2,
+      "eraDiff": 1.45,
+      "seriesGameNumber": 3,
+      "gamesInSeries": 3,
+      "homeRlOptions": [
+        {
+          "line": -1.5,
+          "odds": 2.66
+        },
+        {
+          "line": -1.0,
+          "odds": 2.2
+        },
+        {
+          "line": 1.5,
+          "odds": 1.52
+        },
+        {
+          "line": 2.5,
+          "odds": 1.28
+        }
+      ],
+      "awayRlOptions": [
+        {
+          "line": -2.5,
+          "odds": 3.5
+        },
+        {
+          "line": -1.5,
+          "odds": 2.58
+        },
+        {
+          "line": 1.0,
+          "odds": 1.68
+        },
+        {
+          "line": 1.5,
+          "odds": 1.55
+        }
+      ]
+    },
+    {
+      "gamePk": 824614,
+      "homeTeam": "Chicago White Sox",
+      "awayTeam": "Tampa Bay Rays",
+      "homeAbbr": "CWS",
+      "awayAbbr": "TB",
+      "homeProb": 0.623,
+      "awayProb": 0.377,
+      "pickSide": "home",
+      "modelProb": 0.623,
+      "edge": 0.1468,
+      "stake": {
+        "pct": "3%",
+        "pctValue": 3,
+        "eur": 15.0,
+        "label": "mid",
+        "reportLabel": "3% (EUR 15.00)"
+      },
+      "hasRolling": true,
+      "awayMl": 1.75,
+      "homeMl": 2.1,
+      "awayRl": 3.0,
+      "homeRl": 1.83,
+      "useRl": false,
+      "rlPickOdds": null,
+      "awayImplied": 0.5714,
+      "homeImplied": 0.4762,
+      "pickOdds": 2.1,
+      "marketImplied": 0.4762,
+      "bookCount": 25,
+      "hasOdds": true,
+      "homeBook": "paddypower",
+      "awayBook": "paddypower",
+      "homeSpName": "Jordan Leasure",
+      "awaySpName": "Steven Matz",
+      "homeSpEra": 4.0,
+      "awaySpEra": 3.94,
+      "homeSpWhip": 1.0,
+      "awaySpWhip": 0.94,
+      "homeSpW": 1,
+      "homeSpL": 0,
+      "awaySpW": 3,
+      "awaySpL": 0,
+      "homeL10WP": 0.3,
+      "awayL10WP": 0.8,
+      "homeL10RD": -1.1,
+      "awayL10RD": 1.2,
+      "eraDiff": 0.06,
+      "seriesGameNumber": 3,
+      "gamesInSeries": 3,
+      "homeRlOptions": [
+        {
+          "line": 1.0,
+          "odds": 1.83
+        },
+        {
+          "line": 1.5,
+          "odds": 1.72
+        },
+        {
+          "line": 2.5,
+          "odds": 1.36
+        }
+      ],
+      "awayRlOptions": [
+        {
+          "line": -2.5,
+          "odds": 3.0
+        },
+        {
+          "line": -1.5,
+          "odds": 2.35
+        },
+        {
+          "line": -1.0,
+          "odds": 2.0
+        }
+      ]
+    },
+    {
+      "gamePk": 825023,
+      "homeTeam": "Athletics",
+      "awayTeam": "Texas Rangers",
+      "homeAbbr": "ATH",
+      "awayAbbr": "TEX",
+      "homeProb": 0.4059,
+      "awayProb": 0.5941,
+      "pickSide": "away",
+      "modelProb": 0.5941,
+      "edge": 0.0593,
+      "stake": {
+        "pct": "1%",
+        "pctValue": 1,
+        "eur": 5.0,
+        "label": "low",
+        "reportLabel": "1% (EUR 5.00)"
+      },
+      "hasRolling": true,
+      "awayMl": 1.87,
+      "homeMl": 1.95,
+      "awayRl": 3.1,
+      "homeRl": 1.74,
+      "useRl": false,
+      "rlPickOdds": null,
+      "awayImplied": 0.5348,
+      "homeImplied": 0.5128,
+      "pickOdds": 1.87,
+      "marketImplied": 0.5348,
+      "bookCount": 25,
+      "hasOdds": true,
+      "homeBook": "paddypower",
+      "awayBook": "paddypower",
+      "homeSpName": "Jacob Lopez",
+      "awaySpName": "Jack Leiter",
+      "homeSpEra": 7.43,
+      "awaySpEra": 4.91,
+      "homeSpWhip": 2.18,
+      "awaySpWhip": 1.36,
+      "homeSpW": 1,
+      "homeSpL": 1,
+      "awaySpW": 1,
+      "awaySpL": 1,
+      "homeL10WP": 0.8,
+      "awayL10WP": 0.5,
+      "homeL10RD": 0.7,
+      "awayL10RD": 0.8,
+      "eraDiff": 2.52,
+      "seriesGameNumber": 4,
+      "gamesInSeries": 4,
+      "homeRlOptions": [
+        {
+          "line": 1.0,
+          "odds": 1.74
+        },
+        {
+          "line": 1.5,
+          "odds": 1.65
+        },
+        {
+          "line": 2.5,
+          "odds": 1.35
+        }
+      ],
+      "awayRlOptions": [
+        {
+          "line": -2.5,
+          "odds": 3.1
+        },
+        {
+          "line": -1.5,
+          "odds": 2.46
+        },
+        {
+          "line": -1.0,
+          "odds": 2.12
+        }
+      ]
+    },
+    {
+      "gamePk": 824453,
+      "homeTeam": "Cleveland Guardians",
+      "awayTeam": "Baltimore Orioles",
+      "homeAbbr": "CLE",
+      "awayAbbr": "BAL",
+      "homeProb": 0.7412,
+      "awayProb": 0.2588,
+      "pickSide": "home",
+      "modelProb": 0.7412,
+      "edge": 0.1698,
+      "stake": {
+        "pct": "4%",
+        "pctValue": 4,
+        "eur": 20.0,
+        "label": "mid-high",
+        "reportLabel": "4% (EUR 20.00)"
+      },
+      "hasRolling": true,
+      "awayMl": 2.1,
+      "homeMl": 1.75,
+      "awayRl": 3.7,
+      "homeRl": 2.74,
+      "useRl": false,
+      "rlPickOdds": null,
+      "awayImplied": 0.4762,
+      "homeImplied": 0.5714,
+      "pickOdds": 1.75,
+      "marketImplied": 0.5714,
+      "bookCount": 25,
+      "hasOdds": true,
+      "homeBook": "paddypower",
+      "awayBook": "paddypower",
+      "homeSpName": "Parker Messick",
+      "awaySpName": "Shane Baz",
+      "homeSpEra": 0.51,
+      "awaySpEra": 4.5,
+      "homeSpWhip": 0.91,
+      "awaySpWhip": 1.56,
+      "homeSpW": 2,
+      "homeSpL": 0,
+      "awaySpW": 0,
+      "awaySpL": 1,
+      "homeL10WP": 0.5,
+      "awayL10WP": 0.6,
+      "homeL10RD": -0.1,
+      "awayL10RD": 0.2,
+      "eraDiff": -3.99,
+      "seriesGameNumber": 1,
+      "gamesInSeries": 4,
+      "homeRlOptions": [
+        {
+          "line": -1.5,
+          "odds": 2.74
+        },
+        {
+          "line": -1.0,
+          "odds": 2.25
+        },
+        {
+          "line": 1.5,
+          "odds": 1.49
+        },
+        {
+          "line": 2.5,
+          "odds": 1.25
+        }
+      ],
+      "awayRlOptions": [
+        {
+          "line": -2.5,
+          "odds": 3.7
+        },
+        {
+          "line": -1.5,
+          "odds": 2.7
+        },
+        {
+          "line": 1.0,
+          "odds": 1.66
+        },
+        {
+          "line": 1.5,
+          "odds": 1.53
+        }
+      ]
+    },
+    {
+      "gamePk": 824208,
+      "homeTeam": "Houston Astros",
+      "awayTeam": "Colorado Rockies",
+      "homeAbbr": "HOU",
+      "awayAbbr": "COL",
+      "homeProb": 0.3252,
+      "awayProb": 0.6748,
+      "pickSide": "away",
+      "modelProb": 0.6748,
+      "edge": 0.2666,
+      "stake": {
+        "pct": "5%",
+        "pctValue": 5,
+        "eur": 25.0,
+        "label": "high",
+        "reportLabel": "5% (EUR 25.00)"
+      },
+      "hasRolling": true,
+      "awayMl": 2.45,
+      "homeMl": 1.57,
+      "awayRl": 4.0,
+      "homeRl": 2.28,
+      "useRl": false,
+      "rlPickOdds": null,
+      "awayImplied": 0.4082,
+      "homeImplied": 0.6369,
+      "pickOdds": 2.45,
+      "marketImplied": 0.4082,
+      "bookCount": 25,
+      "hasOdds": true,
+      "homeBook": "boylesports",
+      "awayBook": "paddypower",
+      "homeSpName": "Ryan Weiss",
+      "awaySpName": "Juan Mejia",
+      "homeSpEra": 7.36,
+      "awaySpEra": 5.4,
+      "homeSpWhip": 2.09,
+      "awaySpWhip": 1.8,
+      "homeSpW": 0,
+      "homeSpL": 2,
+      "awaySpW": 0,
+      "awaySpL": 2,
+      "homeL10WP": 0.2,
+      "awayL10WP": 0.4,
+      "homeL10RD": -2.6,
+      "awayL10RD": -0.2,
+      "eraDiff": 1.96,
+      "seriesGameNumber": 3,
+      "gamesInSeries": 3,
+      "homeRlOptions": [
+        {
+          "line": -1.5,
+          "odds": 2.28
+        },
+        {
+          "line": -1.0,
+          "odds": 1.82
+        },
+        {
+          "line": 2.5,
+          "odds": 1.22
+        }
+      ],
+      "awayRlOptions": [
+        {
+          "line": -2.5,
+          "odds": 4.0
+        },
+        {
+          "line": 1.0,
+          "odds": 2.0
+        },
+        {
+          "line": 1.5,
+          "odds": 1.72
+        }
+      ]
+    },
+    {
+      "gamePk": 823313,
+      "homeTeam": "San Diego Padres",
+      "awayTeam": "Seattle Mariners",
+      "homeAbbr": "SD",
+      "awayAbbr": "SEA",
+      "homeProb": 0.7342,
+      "awayProb": 0.2658,
+      "pickSide": "home",
+      "modelProb": 0.7342,
+      "edge": 0.2342,
+      "stake": {
+        "pct": "5%",
+        "pctValue": 5,
+        "eur": 25.0,
+        "label": "high",
+        "reportLabel": "5% (EUR 25.00)"
+      },
+      "hasRolling": true,
+      "awayMl": 1.8,
+      "homeMl": 2.0,
+      "awayRl": 3.1,
+      "homeRl": 1.8,
+      "useRl": false,
+      "rlPickOdds": null,
+      "awayImplied": 0.5556,
+      "homeImplied": 0.5,
+      "pickOdds": 2.0,
+      "marketImplied": 0.5,
+      "bookCount": 25,
+      "hasOdds": true,
+      "homeBook": "paddypower",
+      "awayBook": "paddypower",
+      "homeSpName": "Walker Buehler",
+      "awaySpName": "Luis Castillo",
+      "homeSpEra": 4.97,
+      "awaySpEra": 6.92,
+      "homeSpWhip": 1.26,
+      "awaySpWhip": 1.77,
+      "homeSpW": 0,
+      "homeSpL": 1,
+      "awaySpW": 0,
+      "awaySpL": 0,
+      "homeL10WP": 0.9,
+      "awayL10WP": 0.4,
+      "homeL10RD": 2.7,
+      "awayL10RD": 0.3,
+      "eraDiff": -1.95,
+      "seriesGameNumber": 3,
+      "gamesInSeries": 3,
+      "homeRlOptions": [
+        {
+          "line": 1.0,
+          "odds": 1.8
+        },
+        {
+          "line": 1.5,
+          "odds": 1.64
+        },
+        {
+          "line": 2.5,
+          "odds": 1.33
+        }
+      ],
+      "awayRlOptions": [
+        {
+          "line": -2.5,
+          "odds": 3.1
+        },
+        {
+          "line": -1.5,
+          "odds": 2.46
+        },
+        {
+          "line": -1.0,
+          "odds": 2.04
+        }
+      ]
+    }
+  ],
+  "accumulators": [
+    {
+      "type": "Double",
+      "legs": [
+        {
+          "gamePk": "824208",
+          "game": "COL @ HOU",
+          "label": "COL -2.5",
+          "odds": 4.0,
+          "edge": 0.4248,
+          "line": "-2.5",
+          "pickSide": "away"
+        },
+        {
+          "gamePk": "824453",
+          "game": "BAL @ CLE",
+          "label": "CLE -1.5",
+          "odds": 2.74,
+          "edge": 0.3762,
+          "line": "-1.5",
+          "pickSide": "home"
+        }
+      ],
+      "combined_odds": 10.96,
+      "stake": 5.0,
+      "potential_return": 54.8
+    },
+    {
+      "type": "Treble",
+      "legs": [
+        {
+          "gamePk": "824208",
+          "game": "COL @ HOU",
+          "label": "COL -2.5",
+          "odds": 4.0,
+          "edge": 0.4248,
+          "line": "-2.5",
+          "pickSide": "away"
+        },
+        {
+          "gamePk": "824453",
+          "game": "BAL @ CLE",
+          "label": "CLE -1.5",
+          "odds": 2.74,
+          "edge": 0.3762,
+          "line": "-1.5",
+          "pickSide": "home"
+        },
+        {
+          "gamePk": "823313",
+          "game": "SEA @ SD",
+          "label": "SD ML",
+          "odds": 2.0,
+          "edge": 0.2342,
+          "line": "ml",
+          "pickSide": "home"
+        }
+      ],
+      "combined_odds": 21.92,
+      "stake": 5.0,
+      "potential_return": 109.6
+    }
+  ]
+}

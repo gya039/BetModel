@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block title %}Octagon IQ — Export Data{% endblock %}
+
+{% block content %}
+
+<section class="page-header">
+  <h1 class="page-title">Export Data</h1>
+  <p class="page-sub">Download processed fighter and matchup data</p>
+</section>
+
+<section class="section">
+  <div class="export-grid">
+
+    <div class="export-card">
+      <div class="export-icon">📊</div>
+      <h3 class="export-title">Fighter Summary</h3>
+      <p class="export-desc">All {{ fighters | length }} fighters on the card with full computed stats — records, method breakdowns, averages, career stats.</p>
+      <div class="export-actions">
+        <a href="/download/fighter_summary.csv" class="btn btn--primary">Download CSV</a>
+        <a href="/download/fighter_summary.json" class="btn btn--outline">Download JSON</a>
+      </div>
+    </div>
+
+    <div class="export-card">
+      <div class="export-icon">🥊</div>
+      <h3 class="export-title">Matchup Summary</h3>
+      <p class="export-desc">All {{ matchups | length }} bouts with both fighters' stats side by side.</p>
+      <div class="export-actions">
+        <a href="/download/matchup_summary.csv" class="btn btn--primary">Download CSV</a>
+        <a href="/download/matchup_summary.json" class="btn btn--outline">Download JSON</a>
+      </div>
+    </div>
+
+    <div class="export-card">
+      <div class="export-icon">🗂️</div>
+      <h3 class="export-title">Raw API Data</h3>
+      <p class="export-desc">Live fighter and card data direct from UFCStats scraper.</p>
+      <div class="export-actions">
+        <a href="/api/fighters" class="btn btn--ghost" target="_blank">Fighters JSON API</a>
+        <a href="/api/card" class="btn btn--ghost" target="_blank">Card JSON API</a>
+      </div>
+    </div>
+
+    <div class="export-card">
+      <div class="export-icon">%</div>
+      <h3 class="export-title">Betting Edges</h3>
+      <p class="export-desc">Fight-by-fight model probabilities, odds comparisons, value labels, and rationale for betting markets.</p>
+      <div class="export-actions">
+        <a href="/download/betting_edges.csv" class="btn btn--primary">Download CSV</a>
+        <a href="/download/betting_edges.json" class="btn btn--outline">Download JSON</a>
+      </div>
+    </div>
+
+    <div class="export-card">
+      <div class="export-icon">↕</div>
+      <h3 class="export-title">Movement Report</h3>
+      <p class="export-desc">Saturday odds movement report comparing earlier prices to the latest refreshed sportsbook feed.</p>
+      <div class="export-actions">
+        <a href="/download/movement_report.csv" class="btn btn--primary">Download CSV</a>
+        <a href="/download/movement_report.json" class="btn btn--outline">Download JSON</a>
+      </div>
+    </div>
+
+    <div class="export-card">
+      <div class="export-icon">€</div>
+      <h3 class="export-title">Bankroll & Staking</h3>
+      <p class="export-desc">Singles stake plan, accumulator suggestions, and bet history ledger for bankroll tracking.</p>
+      <div class="export-actions">
+        <a href="/download/staking_plan.csv" class="btn btn--primary">Stakes CSV</a>
+        <a href="/download/staking_plan.json" class="btn btn--outline">Stakes JSON</a>
+        <a href="/download/bet_history.csv" class="btn btn--ghost">History CSV</a>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+{% if fighters %}
+<section class="section">
+  <h2 class="section-heading">Data Preview — Fighters</h2>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Record</th>
+          <th>Win Rate</th>
+          <th>Finish%</th>
+          <th>SLpM</th>
+          <th>Str Acc</th>
+          <th>TD Avg</th>
+          <th>Streak</th>
+          <th>KO/TKO W</th>
+          <th>Sub W</th>
+          <th>Dec W</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for f in fighters %}
+        <tr>
+          <td><a href="/fighter/{{ f.fighter_id }}">{{ f.name }}</a></td>
+          <td>{{ f.get('wins',0) }}-{{ f.get('losses',0) }}{% if f.get('draws',0) %}-{{ f.draws }}{% endif %}</td>
+          <td>{{ f.get('win_rate', '—') }}%</td>
+          <td>{{ f.get('finish_rate', '—') }}%</td>
+          <td>{{ f.get('slpm', '—') }}</td>
+          <td>{% if f.get('str_acc') is not none %}{{ "%.0f"|format(f.str_acc * 100) }}%{% else %}—{% endif %}</td>
+          <td>{{ f.get('td_avg', '—') }}</td>
+          <td>
+            {% set s = f.get('current_streak', 0) %}
+            {% if s > 0 %}<span style="color:#22c55e">+{{ s }}</span>
+            {% elif s < 0 %}<span style="color:#ef4444">{{ s }}</span>
+            {% else %}0{% endif %}
+          </td>
+          <td>{{ f.get('wins_by_ko_tko', 0) }} ({{ f.get('wins_by_ko_tko_pct', 0) }}%)</td>
+          <td>{{ f.get('wins_by_sub', 0) }} ({{ f.get('wins_by_sub_pct', 0) }}%)</td>
+          <td>{{ f.get('wins_by_dec', 0) }} ({{ f.get('wins_by_dec_pct', 0) }}%)</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+{% endblock %}

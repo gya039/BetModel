@@ -1,0 +1,156 @@
+{
+  "CLE_HOU": {
+    "home_ml": 1.62,
+    "away_ml": 2.25,
+    "home_rl": 2.4,
+    "away_rl": 1.68,
+    "home_rl_point": -1.5,
+    "away_rl_point": 1.5,
+    "home_no_vig": 0.5814,
+    "away_no_vig": 0.4186,
+    "book_count": 24
+  },
+  "TB_CIN": {
+    "home_ml": 1.91,
+    "away_ml": 1.87,
+    "home_rl": 1.6,
+    "away_rl": 2.58,
+    "home_rl_point": 1.5,
+    "away_rl_point": -1.5,
+    "home_no_vig": 0.4947,
+    "away_no_vig": 0.5053,
+    "book_count": 24
+  },
+  "DET_MIL": {
+    "home_ml": 1.87,
+    "away_ml": 1.91,
+    "home_rl": 2.83,
+    "away_rl": 1.48,
+    "home_rl_point": -1.5,
+    "away_rl_point": 1.5,
+    "home_no_vig": 0.5053,
+    "away_no_vig": 0.4947,
+    "book_count": 24
+  },
+  "MIA_STL": {
+    "home_ml": 1.83,
+    "away_ml": 1.95,
+    "home_rl": 2.79,
+    "away_rl": 1.49,
+    "home_rl_point": -1.5,
+    "away_rl_point": 1.5,
+    "home_no_vig": 0.5159,
+    "away_no_vig": 0.4841,
+    "book_count": 24
+  },
+  "BOS_NYY": {
+    "home_ml": 1.8,
+    "away_ml": 2.0,
+    "home_rl": 2.76,
+    "away_rl": 1.55,
+    "home_rl_point": -1.5,
+    "away_rl_point": 1.5,
+    "home_no_vig": 0.5263,
+    "away_no_vig": 0.4737,
+    "book_count": 24
+  },
+  "NYM_MIN": {
+    "home_ml": 1.62,
+    "away_ml": 2.3,
+    "home_rl": 2.44,
+    "away_rl": 1.68,
+    "home_rl_point": -1.5,
+    "away_rl_point": 1.5,
+    "home_no_vig": 0.5867,
+    "away_no_vig": 0.4133,
+    "book_count": 24
+  },
+  "KC_BAL": {
+    "home_ml": 1.83,
+    "away_ml": 2.0,
+    "home_rl": 2.68,
+    "away_rl": 1.56,
+    "home_rl_point": -1.5,
+    "away_rl_point": 1.5,
+    "home_no_vig": 0.5222,
+    "away_no_vig": 0.4778,
+    "book_count": 24
+  },
+  "CHC_PHI": {
+    "home_ml": 1.75,
+    "away_ml": 2.1,
+    "home_rl": 2.66,
+    "away_rl": 1.58,
+    "home_rl_point": -1.5,
+    "away_rl_point": 1.5,
+    "home_no_vig": 0.5455,
+    "away_no_vig": 0.4545,
+    "book_count": 24
+  },
+  "TEX_PIT": {
+    "home_ml": 1.91,
+    "away_ml": 1.91,
+    "home_rl": 2.85,
+    "away_rl": 1.48,
+    "home_rl_point": -1.5,
+    "away_rl_point": 1.5,
+    "home_no_vig": 0.5,
+    "away_no_vig": 0.5,
+    "book_count": 24
+  },
+  "COL_SD": {
+    "home_ml": 2.2,
+    "away_ml": 1.67,
+    "home_rl": 1.85,
+    "away_rl": 2.08,
+    "home_rl_point": 1.5,
+    "away_rl_point": -1.5,
+    "home_no_vig": 0.4315,
+    "away_no_vig": 0.5685,
+    "book_count": 24
+  },
+  "LAA_TOR": {
+    "home_ml": 1.91,
+    "away_ml": 1.91,
+    "home_rl": 2.76,
+    "away_rl": 1.5,
+    "home_rl_point": -1.5,
+    "away_rl_point": 1.5,
+    "home_no_vig": 0.5,
+    "away_no_vig": 0.5,
+    "book_count": 24
+  },
+  "AZ_CWS": {
+    "home_ml": 1.65,
+    "away_ml": 2.25,
+    "home_rl": 2.36,
+    "away_rl": 1.69,
+    "home_rl_point": -1.5,
+    "away_rl_point": 1.5,
+    "home_no_vig": 0.5769,
+    "away_no_vig": 0.4231,
+    "book_count": 24
+  },
+  "SEA_ATH": {
+    "home_ml": 1.6,
+    "away_ml": 2.38,
+    "home_rl": 2.38,
+    "away_rl": 1.68,
+    "home_rl_point": -1.5,
+    "away_rl_point": 1.5,
+    "home_no_vig": 0.598,
+    "away_no_vig": 0.402,
+    "book_count": 24
+  },
+  "SF_LAD": {
+    "home_ml": 2.5,
+    "away_ml": 1.53,
+    "home_rl": 1.88,
+    "away_rl": 2.06,
+    "home_rl_point": 1.5,
+    "away_rl_point": -1.5,
+    "home_no_vig": 0.3797,
+    "away_no_vig": 0.6203,
+    "book_count": 24
+  }
+}

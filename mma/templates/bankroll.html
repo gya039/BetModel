@@ -1,0 +1,255 @@
+{% extends "base.html" %}
+{% block title %}Octagon IQ - Bankroll War Room{% endblock %}
+
+{% block content %}
+
+{% set bankroll = plan.bankroll %}
+{% set base_bankroll = plan.base_bankroll %}
+{% set pnl = bankroll - base_bankroll %}
+{% set singles = plan.singles %}
+{% set accas = plan.accumulators %}
+{% set single_stake = plan.total_single_stake or 0 %}
+{% set acca_stake = plan.total_accumulator_stake or 0 %}
+{% set total_exposure = single_stake + acca_stake %}
+{% set exposure_pct = (total_exposure / bankroll * 100) if bankroll else 0 %}
+{% set single_pct = (single_stake / bankroll * 100) if bankroll else 0 %}
+{% set top_pick = singles[0] if singles else none %}
+
+<section class="war-room">
+  <div class="war-room__grid" aria-hidden="true"></div>
+  <div class="war-room__header">
+    <div>
+      <div class="hero-kicker"><span class="status-dot"></span> Bankroll War Room</div>
+      <h1>Capital Under Control</h1>
+      <p>Fight-night staking, exposure discipline, accumulator builds, and bet history for the Octagon IQ model.</p>
+    </div>
+    <div class="war-room__actions">
+      <a href="/betting" class="btn btn--ice">Betting Board</a>
+      <a href="/check-movement" class="btn btn--neon">Run Movement</a>
+    </div>
+  </div>
+
+  <div class="capital-deck">
+    <div class="capital-core">
+      <span>Active Bankroll</span>
+      <strong>EUR {{ "%.2f"|format(bankroll) }}</strong>
+      <small class="{% if pnl >= 0 %}positive{% else %}negative{% endif %}">
+        {{ "%+.2f"|format(pnl) }} from EUR {{ "%.2f"|format(base_bankroll) }}
+      </small>
+      <div class="capital-core__beam"></div>
+    </div>
+
+    <div class="exposure-core" style="--exposure: {{ [exposure_pct, 100] | min }};">
+      <div class="exposure-ring">
+        <span>Exposure</span>
+        <strong>{{ "%.1f"|format(exposure_pct) }}%</strong>
+      </div>
+      <div class="exposure-copy">
+        <span>Total Risk Loaded</span>
+        <strong>EUR {{ "%.2f"|format(total_exposure) }}</strong>
+        <small>Singles EUR {{ "%.2f"|format(single_stake) }} / Accas EUR {{ "%.2f"|format(acca_stake) }}</small>
+      </div>
+    </div>
+
+    <div class="command-stack">
+      <div>
+        <span>Singles Armed</span>
+        <strong>{{ singles|length }}</strong>
+      </div>
+      <div>
+        <span>Accumulator Builds</span>
+        <strong>{{ accas|length }}</strong>
+      </div>
+      <div>
+        <span>Singles Cap Used</span>
+        <strong>{{ "%.1f"|format(single_pct) }}%</strong>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="landing-section">
+  <div class="section-heading-row">
+    <div>
+      <h2 class="section-heading">Stake Protocol</h2>
+      <p class="section-blurb">Aggressive, but capped. The model attacks edge without letting one card drain the bank.</p>
+    </div>
+    <div class="export-actions">
+      <a href="/download/staking_plan.csv" class="btn btn--ghost">CSV</a>
+      <a href="/download/staking_plan.json" class="btn btn--ghost">JSON</a>
+    </div>
+  </div>
+
+  <div class="protocol-strip">
+    {% for rule in plan.staking_rules %}
+    <div class="protocol-chip">
+      <span>{{ rule.edge }}</span>
+      <strong>{{ rule.stake }}</strong>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="landing-section">
+  <div class="section-heading-row">
+    <div>
+      <h2 class="section-heading">Singles Arsenal</h2>
+      <p class="section-blurb">Priced model edges transformed into controlled stake tickets.</p>
+    </div>
+    {% if top_pick %}
+    <div class="micro-signal">
+      <span>Top Ticket</span>
+      <strong>{{ top_pick.selection }} @ {{ "%.2f"|format(top_pick.decimal_odds) }}</strong>
+    </div>
+    {% endif %}
+  </div>
+
+  {% if not singles %}
+  <div class="empty-state">
+    <p>No priced singles currently clear the staking threshold.</p>
+    <code>python src/fetch_odds.py && python src/betting_model.py</code>
+  </div>
+  {% else %}
+  <div class="arsenal-grid">
+    {% for pick in singles %}
+    <article class="ticket-card">
+      <div class="ticket-card__scan"></div>
+      <header>
+        <span class="value-badge value-badge--{{ pick.label|lower|replace(' ', '-') }}">{{ pick.label }}</span>
+        <strong>{{ "%.2f"|format(pick.decimal_odds) }}</strong>
+      </header>
+      <h3>{{ pick.selection }}</h3>
+      <p>{{ pick.fight }} <span>/</span> {{ pick.market }}</p>
+
+      <div class="ticket-metrics">
+        <div>
+          <span>Stake</span>
+          <strong>EUR {{ "%.2f"|format(pick.stake.eur) }}</strong>
+          <small>{{ pick.stake.pct }} of bank</small>
+        </div>
+        <div>
+          <span>Return</span>
+          <strong>EUR {{ "%.2f"|format(pick.potential_return) }}</strong>
+          <small>Profit EUR {{ "%.2f"|format(pick.profit_if_win) }}</small>
+        </div>
+        <div>
+          <span>Edge</span>
+          <strong>{{ pick.edge }}%</strong>
+          <small>{{ pick.confidence }}</small>
+        </div>
+      </div>
+
+      <footer>
+        <span>{{ pick.sportsbook }}</span>
+        <a href="/betting/{{ pick.fight_id }}">Open Fight</a>
+      </footer>
+    </article>
+    {% endfor %}
+  </div>
+  {% endif %}
+</section>
+
+<section class="landing-section">
+  <div class="section-heading-row">
+    <div>
+      <h2 class="section-heading">Accumulator Strike Team</h2>
+      <p class="section-blurb">Small-stake multi-leg builds from the strongest priced moneyline and method-market edges.</p>
+    </div>
+  </div>
+
+  {% if not accas %}
+  <div class="empty-state">
+    <p>No accumulator set qualifies yet. Acca legs need positive edge and real decimal odds.</p>
+  </div>
+  {% else %}
+  <div class="strike-grid">
+    {% for acca in accas %}
+    <article class="strike-card">
+      <header>
+        <div>
+          <span>{{ acca.legs|length }} selections</span>
+          <h3>{{ acca.type }}</h3>
+        </div>
+        <strong>{{ "%.2f"|format(acca.combined_odds) }}x</strong>
+      </header>
+
+      <div class="strike-legs">
+        {% for leg in acca.legs %}
+        <div class="strike-leg">
+          <span>{{ loop.index }}</span>
+          <div>
+            <strong>{{ leg.selection }}</strong>
+            <small>{{ leg.fight }} - {{ leg.market }}</small>
+          </div>
+          <em>{{ "%.2f"|format(leg.odds) }}</em>
+        </div>
+        {% endfor %}
+      </div>
+
+      <footer>
+        <div>
+          <span>Stake</span>
+          <strong>EUR {{ "%.2f"|format(acca.stake) }}</strong>
+        </div>
+        <div>
+          <span>Return</span>
+          <strong>EUR {{ "%.2f"|format(acca.potential_return) }}</strong>
+        </div>
+        <div>
+          <span>Combo Edge</span>
+          <strong>{{ acca.combined_edge }}%</strong>
+        </div>
+      </footer>
+    </article>
+    {% endfor %}
+  </div>
+  {% endif %}
+</section>
+
+<section class="landing-section history-shell">
+  <div class="section-heading-row">
+    <div>
+      <h2 class="section-heading">Bet History</h2>
+      <p class="section-blurb">Settlement ledger for bankroll tracking. Pending until you start logging results.</p>
+    </div>
+    <a href="/download/bet_history.csv" class="btn btn--ghost">History CSV</a>
+  </div>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Type</th>
+          <th>Fight</th>
+          <th>Selection</th>
+          <th>Odds</th>
+          <th>Stake</th>
+          <th>Result</th>
+          <th>P&L</th>
+          <th>Bankroll</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in plan.history %}
+        <tr>
+          <td>{{ row.date }}</td>
+          <td>{{ row.bet_type }}</td>
+          <td>{{ row.fight }}</td>
+          <td>{{ row.selection }}</td>
+          <td>{{ row.odds }}</td>
+          <td>{{ row.stake_eur }}</td>
+          <td>{{ row.result or 'Pending' }}</td>
+          <td>{{ row.pnl }}</td>
+          <td>{{ row.bankroll_after }}</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="9">No bet history yet. The ledger is ready at data/processed/betting/bet_history.csv.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{% endblock %}

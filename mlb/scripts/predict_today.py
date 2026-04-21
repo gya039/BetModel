@@ -19,6 +19,7 @@ import time
 import pickle
 import argparse
 import csv
+import os
 from pathlib import Path
 from collections import defaultdict, deque
 from datetime import date, datetime, timezone, timedelta
@@ -76,10 +77,11 @@ SEASON = 2026
 BANKROLL_EUR = 500.0
 ACCA_BANKROLL_EUR = 100.0
 
-# Spread model gate: set to True once spread_model.pkl has been validated
-# via spread_model.py diagnostics. While False, spread cover probs are computed
-# and stored in the prediction dict but never used for bet selection.
-USE_SPREAD_MODEL = False
+# Spread model gate. Selection still requires the saved spread model to pass its
+# validation checks; setting this True lets the pipeline prove whether RL is
+# blocked by validation/filtering instead of being globally disabled.
+USE_SPREAD_MODEL = True
+SPREAD_DEBUG = os.getenv("SPREAD_DEBUG", "").lower() in {"1", "true", "yes", "on"}
 
 ODDS_TEAM_MAP = {
     "Arizona Diamondbacks": "AZ",
@@ -1820,20 +1822,31 @@ if __name__ == "__main__":
     pkl_features = saved.get("features", FEATURES)
     print(f"// Model loaded ({len(pkl_features)} features)", file=sys.stderr)
 
-    # Spread model — loaded silently; never used for bet selection until USE_SPREAD_MODEL=True
+    # Spread model — evaluated for diagnostics; production RL selection still requires validation.
     spread_model = None
+    spread_model_status = "missing"
     spread_model_path = MODEL_DIR / "spread_model.pkl"
     if spread_model_path.exists():
         try:
             from mlb.scripts.spread_model import SpreadModel
             spread_model = SpreadModel.load(spread_model_path)
+            spread_model_status = "loaded"
             print(
                 f"// Spread model loaded (trained through {spread_model.trained_through}, "
                 f"σ={spread_model.residual_std:.2f})",
                 file=sys.stderr,
             )
+            if spread_model.validation_passed is False:
+                spread_model_status = "validation_failed"
+                print(
+                    f"// Spread model validation failed: {spread_model.validation_reasons}",
+                    file=sys.stderr,
+                )
         except Exception as _e:
+            spread_model_status = "load_failed"
             print(f"// Spread model load failed (non-fatal): {_e}", file=sys.stderr)
+    else:
+        print(f"// Spread model missing: {spread_model_path}", file=sys.stderr)
 
     output = {}
     report_rows = []
@@ -1902,17 +1915,27 @@ if __name__ == "__main__":
 
         # ── Spread model: compute cover probability for available lines ──────────
         # Always computed when the spread model is loaded (for inspection/logging).
-        # Bet selection only switches to spread when USE_SPREAD_MODEL=True AND
-        # a SP is confirmed (no TBD starters). ML inference is never used here.
+        # Bet selection only switches to spread when USE_SPREAD_MODEL=True, the
+        # spread model validates, and SPs are confirmed. ML inference is never
+        # used for cover probability.
         spread_cover_prob = None
         spread_edge = None
         spread_point = None
         spread_odds = None
+        spread_best_cover_prob = None
+        spread_best_edge = None
+        spread_best_point = None
+        spread_best_odds = None
+        spread_positive_line_count = 0
+        spread_option_count = 0
+        spread_rejection_reason = "not_evaluated"
         if spread_model and market and pick_side != "none":
             _sp_confirmed = (
                 g.get("home_sp_name", "TBD") != "TBD"
                 and g.get("away_sp_name", "TBD") != "TBD"
             )
+            if not _sp_confirmed:
+                spread_rejection_reason = "tbd_starting_pitcher"
             if _sp_confirmed:
                 # Feature vector for the spread model (uses its own stored feature list)
                 _sm_feat_list = spread_model.features or pkl_features
@@ -1925,17 +1948,57 @@ if __name__ == "__main__":
                 _home_options = market.get("home_rl_options", [])
                 _away_options = market.get("away_rl_options", [])
                 if pick_side == "home" and _home_options:
-                    _best = spread_model.best_cover_ev(_sm_vec, _home_options)
+                    _best = spread_model.best_cover_ev(
+                        _sm_vec,
+                        _home_options,
+                        debug_label=f"{g['away_team']} @ {g['home_team']} HOME",
+                        debug=SPREAD_DEBUG,
+                        return_diagnostics=True,
+                    )
                     if _best:
-                        spread_edge = _best["edge"]
-                        spread_point = _best["line"]
-                        spread_odds = _best["odds"]
+                        spread_best_edge = _best["edge"]
+                        spread_best_point = _best["line"]
+                        spread_best_odds = _best["odds"]
+                        spread_best_cover_prob = _best["cover_prob"]
+                        spread_positive_line_count = _best["positive_line_count"]
+                        spread_option_count = _best["option_count"]
+                        spread_rejection_reason = _best["rejection_reason"]
+                        if _best["edge"] > 0:
+                            spread_edge = _best["edge"]
+                            spread_point = _best["line"]
+                            spread_odds = _best["odds"]
+                    else:
+                        spread_rejection_reason = "no_valid_spread_options"
                 elif pick_side == "away" and _away_options:
-                    _best = spread_model.best_away_cover_ev(_sm_vec, _away_options)
+                    _best = spread_model.best_away_cover_ev(
+                        _sm_vec,
+                        _away_options,
+                        debug_label=f"{g['away_team']} @ {g['home_team']} AWAY",
+                        debug=SPREAD_DEBUG,
+                        return_diagnostics=True,
+                    )
                     if _best:
-                        spread_edge = _best["edge"]
-                        spread_point = _best["line"]
-                        spread_odds = _best["odds"]
+                        spread_best_edge = _best["edge"]
+                        spread_best_point = _best["line"]
+                        spread_best_odds = _best["odds"]
+                        spread_best_cover_prob = _best["cover_prob"]
+                        spread_positive_line_count = _best["positive_line_count"]
+                        spread_option_count = _best["option_count"]
+                        spread_rejection_reason = _best["rejection_reason"]
+                        if _best["edge"] > 0:
+                            spread_edge = _best["edge"]
+                            spread_point = _best["line"]
+                            spread_odds = _best["odds"]
+                    else:
+                        spread_rejection_reason = "no_valid_spread_options"
+                else:
+                    spread_rejection_reason = "no_spread_options"
+        elif not spread_model:
+            spread_rejection_reason = "spread_model_missing"
+        elif not market:
+            spread_rejection_reason = "market_missing"
+        elif pick_side == "none":
+            spread_rejection_reason = "no_ml_pick_side"
 
         # ── Bet selection: ML only until spread model is validated ────────────
         # Run lines are shown for context only. Do not switch to a run-line bet
@@ -1947,13 +2010,23 @@ if __name__ == "__main__":
 
         # When USE_SPREAD_MODEL is enabled and spread model shows better EV than ML,
         # switch to the spread market. TBD starter guard is already applied above.
-        if USE_SPREAD_MODEL and spread_edge is not None and spread_edge >= 0.03:
+        spread_selection_allowed = (
+            USE_SPREAD_MODEL
+            and spread_model is not None
+            and getattr(spread_model, "validation_passed", None) is True
+        )
+        if spread_selection_allowed and spread_edge is not None and spread_edge >= 0.03:
             if spread_edge > edge:
                 use_rl = True
                 rl_pick_odds = spread_odds
                 # Re-stake using spread edge (staking ladder unchanged)
                 stake = stake_tier(spread_edge, BANKROLL_EUR)
                 edge = spread_edge
+                spread_rejection_reason = "selected"
+            else:
+                spread_rejection_reason = "ml_edge_better"
+        elif spread_edge is not None and spread_edge >= 0.03 and not spread_selection_allowed:
+            spread_rejection_reason = "model_validation_failed"
 
         stake = stake_tier(edge, BANKROLL_EUR)
 
@@ -2036,7 +2109,19 @@ if __name__ == "__main__":
             "spreadEdge": spread_edge,
             "spreadPoint": spread_point,
             "spreadOdds": spread_odds,
+            "spreadBestCoverProb": spread_best_cover_prob,
+            "spreadBestEdge": spread_best_edge,
+            "spreadBestPoint": spread_best_point,
+            "spreadBestOdds": spread_best_odds,
+            "spreadPositiveLineCount": spread_positive_line_count,
+            "spreadOptionCount": spread_option_count,
+            "spreadSelectionAllowed": spread_selection_allowed,
+            "spreadRejectionReason": spread_rejection_reason,
             "spreadModelLoaded": spread_model is not None,
+            "spreadModelStatus": spread_model_status,
+            "spreadModelValidationPassed": getattr(spread_model, "validation_passed", None) if spread_model else None,
+            "spreadModelValidationReasons": getattr(spread_model, "validation_reasons", []) if spread_model else [],
+            "modelFeatures": {feature: fd.get(feature) for feature in pkl_features},
         }
 
         output[str(g["game_pk"])] = row

@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Octagon IQ{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=ui-polish-9">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+  <nav class="navbar">
+    <div class="nav-inner">
+      <a href="/" class="nav-brand">
+        <span class="nav-hex">⬡</span>
+        <span class="nav-title">OCTAGON <span class="nav-accent">IQ</span></span>
+      </a>
+      <div class="nav-links">
+        <a href="/" class="nav-link {% if request.path == '/' %}active{% endif %}">Home</a>
+        <a href="/fighters" class="nav-link {% if '/fighters' in request.path %}active{% endif %}">Fighters</a>
+        <a href="/betting" class="nav-link {% if '/betting' in request.path %}active{% endif %}">Betting</a>
+        <a href="/check-movement" class="nav-link {% if '/check-movement' in request.path %}active{% endif %}">Movement</a>
+        <a href="/bankroll" class="nav-link {% if '/bankroll' in request.path %}active{% endif %}">Bankroll</a>
+        <a href="/export" class="nav-link {% if '/export' in request.path %}active{% endif %}">Export</a>
+      </div>
+    </div>
+  </nav>
+
+  <main class="page-body">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <span class="footer-brand">OCTAGON IQ</span>
+      <span class="footer-sep">·</span>
+      <span>MMA Analytics Dashboard</span>
+      <span class="footer-sep">·</span>
+      <span>Data: UFCStats.com + The Odds API</span>
+    </div>
+  </footer>
+
+  <script src="{{ url_for('static', filename='js/charts.js') }}?v=ui-polish-9"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

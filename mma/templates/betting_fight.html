@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% block title %}Octagon IQ - Betting - {{ fight.fight }}{% endblock %}
+
+{% block content %}
+
+{% set fa = fight.fighter_a %}
+{% set fb = fight.fighter_b %}
+{% set breakdown = fight.betting_breakdown %}
+
+<section class="page-header">
+  <div class="breadcrumb"><a href="/betting">← Betting Board</a></div>
+  <h1 class="page-title matchup-title">
+    <a href="/fighter/{{ fa.fighter_id }}">{{ fa.name }}</a>
+    <span class="matchup-vs">VS</span>
+    <a href="/fighter/{{ fb.fighter_id }}">{{ fb.name }}</a>
+  </h1>
+  <p class="page-sub">{{ fight.weight_class }} betting analysis{% if not fight.odds_available %} - odds not loaded yet{% endif %}</p>
+</section>
+
+<section class="section">
+  <div class="fight-betting-hero">
+    <div class="fight-betting-pick">
+      <span class="bet-metric__label">Model Side</span>
+      <h2>{{ fight.model_side }}</h2>
+      <div class="prob-ring">{{ "%.1f"|format(fight.model_side_probability * 100) }}%</div>
+      <span class="value-badge value-badge--{{ fight.playable_label|lower|replace(' ', '-') }}">{{ fight.playable_label }}</span>
+    </div>
+    <div class="fight-betting-copy">
+      <h3>Betting Breakdown</h3>
+      <p>{{ breakdown.edge }}</p>
+      <p>{{ breakdown.fight_script }}</p>
+      <p>{{ breakdown.finish_outlook }}</p>
+      <p><strong>Underdog path:</strong> {{ breakdown.underdog_path }}</p>
+      <p><strong>Biggest danger to the favorite:</strong> {{ breakdown.favorite_danger }}</p>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <h2 class="section-heading">Betting Suggestions</h2>
+  <div class="suggestion-grid">
+    <div class="suggestion-card">
+      <span class="bet-metric__label">Best Side</span>
+      <strong>{{ fight.model_side }} moneyline</strong>
+      <p>{{ breakdown.rationale }}</p>
+    </div>
+    <div class="suggestion-card">
+      <span class="bet-metric__label">Best Prop</span>
+      <strong>
+        {% if fight.best_prop %}
+          {{ fight.best_prop.market }}{% if fight.best_prop.selection in ['Yes', 'No', 'Over', 'Under'] %}: {{ fight.best_prop.selection }}{% endif %}
+        {% else %}
+          Pass
+        {% endif %}
+      </strong>
+      <p>{{ fight.best_prop.rationale if fight.best_prop else 'No prop is priced strongly enough by the model.' }}</p>
+    </div>
+    <div class="suggestion-card">
+      <span class="bet-metric__label">Current Price Read</span>
+      {% if fight.best_bet %}
+      <strong>{{ fight.best_bet.label }}: {{ fight.best_bet.selection }}</strong>
+      <p>{{ fight.best_bet.sportsbook }} {{ "%.2f"|format(fight.best_bet.decimal_odds) }} decimal. Model {{ "%.1f"|format(fight.best_bet.model_probability * 100) }}%, implied {{ "%.1f"|format(fight.best_bet.implied_probability * 100) }}%, edge {{ fight.best_bet.edge }}%.</p>
+      {% else %}
+      <strong>Pass at current numbers</strong>
+      <p>No available sportsbook price clears the value threshold. Keep the model lean, but wait for a better number.</p>
+      {% endif %}
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <h2 class="section-heading">Odds & Value</h2>
+  <div class="table-wrap">
+    <table class="data-table betting-table">
+      <thead>
+        <tr>
+          <th>Label</th>
+          <th>Market</th>
+          <th>Selection</th>
+          <th>Book</th>
+          <th>Decimal</th>
+          <th>American</th>
+          <th>Implied</th>
+          <th>Model</th>
+          <th>Edge</th>
+          <th>Confidence</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in fight.markets %}
+        <tr>
+          <td><span class="value-badge value-badge--{{ row.label|lower|replace(' ', '-') }}">{{ row.label }}</span></td>
+          <td>{{ row.market }}</td>
+          <td>{{ row.selection }}</td>
+          <td>{{ row.sportsbook or 'No market' }}</td>
+          <td>{% if row.decimal_odds != '' %}{{ "%.2f"|format(row.decimal_odds) }}{% else %}—{% endif %}</td>
+          <td>{% if row.odds != '' %}{{ row.odds }}{% else %}—{% endif %}</td>
+          <td>{% if row.implied_probability is not none %}{{ "%.1f"|format(row.implied_probability * 100) }}%{% else %}—{% endif %}</td>
+          <td>{{ "%.1f"|format(row.model_probability * 100) }}%</td>
+          <td class="{% if row.edge is not none and row.edge > 0 %}td-winner{% endif %}">{% if row.edge is not none %}{{ row.edge }}%{% else %}—{% endif %}</td>
+          <td>{{ row.confidence }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="table-note">Missing prop odds are kept as model-only leans. Run <code>python src/fetch_odds.py</code> close to fight day, then <code>python src/betting_model.py</code> to refresh priced edges.</p>
+</section>
+
+<section class="section">
+  <h2 class="section-heading">Detailed Reasoning</h2>
+  <div class="detail-reasoning">
+    <p>{{ breakdown.rationale }}</p>
+    <div class="reasoning-cols">
+      <div>
+        <h4>{{ fa.name }} Paths</h4>
+        <ul>
+          <li>KO/TKO model share: {{ "%.1f"|format((fight.markets | selectattr('market', 'equalto', fa.name ~ ' by KO/TKO') | list | first).model_probability * 100) if (fight.markets | selectattr('market', 'equalto', fa.name ~ ' by KO/TKO') | list) else '—' }}%</li>
+          <li>Submission and grappling chances are weighted against {{ fb.name }}'s loss profile.</li>
+          <li>Decision path is stronger when volume, durability, and control stats point to bankable minutes.</li>
+        </ul>
+      </div>
+      <div>
+        <h4>{{ fb.name }} Paths</h4>
+        <ul>
+          <li>KO/TKO model share: {{ "%.1f"|format((fight.markets | selectattr('market', 'equalto', fb.name ~ ' by KO/TKO') | list | first).model_probability * 100) if (fight.markets | selectattr('market', 'equalto', fb.name ~ ' by KO/TKO') | list) else '—' }}%</li>
+          <li>Submission path improves when takedown/sub-attempt stats align with the opponent's historical weaknesses.</li>
+          <li>Decision path depends on sustaining pace without giving away the clearest phase edge.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+{% endblock %}

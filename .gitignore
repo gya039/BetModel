@@ -19,3 +19,15 @@ betfair/certs/
 */data/raw/
 */data/processed/
 */models/
+
+# Diamond Edge app — runtime/build artifacts
+diamond-edge/node_modules/
+diamond-edge/dist/
+diamond-edge/chrome*/
+diamond-edge/site/
+site/
+
+# Temp / scratch files
+predict_stderr.txt
+*.pma
+*.bat

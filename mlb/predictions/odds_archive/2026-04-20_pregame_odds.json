@@ -1,0 +1,58 @@
+{
+  "CLE_HOU": {
+    "home_ml": 1.75,
+    "away_ml": 2.1,
+    "home_rl": 2.66,
+    "away_rl": 3.8,
+    "book_count": 26
+  },
+  "TB_CIN": {
+    "home_ml": 1.8,
+    "away_ml": 2.0,
+    "home_rl": 2.55,
+    "away_rl": 3.5,
+    "book_count": 26
+  },
+  "MIA_STL": {
+    "home_ml": 1.73,
+    "away_ml": 2.1,
+    "home_rl": 2.56,
+    "away_rl": 3.7,
+    "book_count": 26
+  },
+  "KC_BAL": {
+    "home_ml": 1.95,
+    "away_ml": 1.91,
+    "home_rl": 1.76,
+    "away_rl": 3.0,
+    "book_count": 26
+  },
+  "CHC_PHI": {
+    "home_ml": 1.91,
+    "away_ml": 1.91,
+    "home_rl": 2.33,
+    "away_rl": 3.4,
+    "book_count": 26
+  },
+  "COL_LAD": {
+    "home_ml": 2.8,
+    "away_ml": 1.44,
+    "home_rl": 2.3,
+    "away_rl": 1.95,
+    "book_count": 26
+  },
+  "LAA_TOR": {
+    "home_ml": 2.0,
+    "away_ml": 1.83,
+    "home_rl": 1.76,
+    "away_rl": 3.1,
+    "book_count": 26
+  },
+  "SEA_ATH": {
+    "home_ml": 1.67,
+    "away_ml": 2.2,
+    "home_rl": 2.48,
+    "away_rl": 3.8,
+    "book_count": 26
+  }
+}

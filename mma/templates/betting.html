@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}Octagon IQ — Betting Board{% endblock %}
+
+{% block content %}
+
+{% set best_bets = fights | selectattr('playable_label', 'equalto', 'Best Bet') | list %}
+{% set value_bets = fights | selectattr('playable_label', 'equalto', 'Value') | list %}
+{% set avg_edge = fights | map(attribute='best_priced_edge') | select('number') | list %}
+
+<section class="page-header page-header--command page-header--betting">
+  <h1 class="page-title">Betting Board</h1>
+  <p class="page-sub">{{ card.get('event_name', 'Upcoming UFC Card') }}{% if card.get('event_date') %} · {{ card.event_date }}{% endif %}</p>
+</section>
+
+<div class="betting-hero-strip">
+  <div class="bstrip-stat">
+    <span class="bstrip-val">{{ fights|length }}</span>
+    <span class="bstrip-lbl">Fights Analysed</span>
+  </div>
+  <div class="bstrip-divider"></div>
+  <div class="bstrip-stat">
+    <span class="bstrip-val profit">{{ best_bets|length }}</span>
+    <span class="bstrip-lbl">Best Bets</span>
+  </div>
+  <div class="bstrip-divider"></div>
+  <div class="bstrip-stat">
+    <span class="bstrip-val" style="color:var(--cyan)">{{ value_bets|length }}</span>
+    <span class="bstrip-lbl">Value Plays</span>
+  </div>
+  <div class="bstrip-divider"></div>
+  <div class="bstrip-stat">
+    <span class="bstrip-val" style="color:var(--gold)">{{ avg_edge|length }}</span>
+    <span class="bstrip-lbl">Priced Markets</span>
+  </div>
+  <div class="bstrip-actions">
+    <a href="/download/betting_edges.csv" class="btn btn--ghost">CSV</a>
+    <a href="/download/betting_edges.json" class="btn btn--ghost">JSON</a>
+  </div>
+</div>
+
+<section class="section">
+  {% if not fights %}
+  <div class="empty-state">
+    <p>No betting analysis generated yet.</p>
+    <code>python src/betting_model.py</code>
+  </div>
+  {% else %}
+  <div class="betting-grid-v2">
+    {% for fight in fights %}
+    {% set is_best = fight.playable_label == 'Best Bet' %}
+    {% set best = fight.get('best_bet') %}
+    {% set prop = fight.get('best_prop') %}
+    {% set edge_pct = fight.best_priced_edge if fight.best_priced_edge is number else 0 %}
+    <a class="bet-card-v2 {% if is_best %}bet-card-v2--hot glow-border{% endif %}" href="/betting/{{ fight.fight_id }}">
+
+      <div class="bcv2-header">
+        <div class="bcv2-bout">Bout {{ fight.bout_number }}{% if fight.weight_class %} · {{ fight.weight_class }}{% endif %}</div>
+        <span class="value-badge value-badge--{{ fight.playable_label|lower|replace(' ', '-') }}">{{ fight.playable_label }}</span>
+      </div>
+
+      <h3 class="bcv2-fight">{{ fight.fight }}</h3>
+
+      <div class="bcv2-metrics">
+        <div class="bcv2-metric">
+          <span class="bcv2-metric__val">{{ fight.model_side }}</span>
+          <span class="bcv2-metric__lbl">Side Lean</span>
+          <span class="bcv2-metric__sub">{{ "%.0f"|format(fight.model_side_probability * 100) }}%</span>
+        </div>
+        <div class="bcv2-metric">
+          <span class="bcv2-metric__val">{{ "%.0f"|format(fight.finish_probability * 100) }}%</span>
+          <span class="bcv2-metric__lbl">Finish%</span>
+          <span class="bcv2-metric__sub">Dec {{ "%.0f"|format(fight.decision_probability * 100) }}%</span>
+        </div>
+        <div class="bcv2-metric">
+          <span class="bcv2-metric__val {% if fight.confidence == 'High' %}profit{% elif fight.confidence == 'Low' %}loss{% endif %}">{{ fight.confidence }}</span>
+          <span class="bcv2-metric__lbl">Confidence</span>
+          <span class="bcv2-metric__sub">{% if edge_pct %}Edge {{ edge_pct }}%{% else %}No edge{% endif %}</span>
+        </div>
+      </div>
+
+      {% if edge_pct %}
+      <div class="bcv2-edge-bar">
+        <div class="edge-bar-wrap">
+          <div class="edge-bar-fill {% if edge_pct >= 10 %}edge-bar-fill--high{% endif %}" style="width:{{ [edge_pct * 5, 100]|min }}%"></div>
+        </div>
+        <span class="bcv2-edge-label">{{ edge_pct }}% edge</span>
+      </div>
+      {% endif %}
+
+      <div class="bcv2-angles">
+        {% if best %}
+        <div class="bcv2-angle-row">
+          <span>Play</span>
+          <strong>{{ best.selection }} · {{ best.sportsbook }} · {{ "%.2f"|format(best.decimal_odds) }}</strong>
+        </div>
+        {% endif %}
+        {% if prop %}
+        <div class="bcv2-angle-row">
+          <span>Prop</span>
+          <strong>{{ prop.market }}{% if prop.selection in ['Yes','No','Over','Under'] %}: {{ prop.selection }}{% endif %}</strong>
+        </div>
+        {% endif %}
+      </div>
+
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+</section>
+
+{% endblock %}

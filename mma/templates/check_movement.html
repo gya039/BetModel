@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% block title %}Octagon IQ — Odds Movement{% endblock %}
+
+{% block content %}
+
+<section class="page-header page-header--command page-header--movement">
+  <h1 class="page-title">Odds Movement</h1>
+  <p class="page-sub">{{ card.get('event_name', 'Upcoming UFC Card') }}{% if card.get('event_date') %} · {{ card.event_date }}{% endif %}</p>
+</section>
+
+<div class="movement-command-strip">
+  <div class="mcs-stats">
+    <div class="mcs-stat">
+      <span class="mcs-val">{{ report.markets_compared }}</span>
+      <span class="mcs-lbl">Markets Compared</span>
+    </div>
+    <div class="mcs-divider"></div>
+    <div class="mcs-stat">
+      <span class="mcs-val {% if report.noteworthy_count > 0 %}profit{% endif %}">{{ report.noteworthy_count }}</span>
+      <span class="mcs-lbl">Noteworthy Moves</span>
+    </div>
+    <div class="mcs-divider"></div>
+    <div class="mcs-stat">
+      <span class="mcs-val" style="color:var(--text-2);font-size:0.8rem">{{ report.generated_at or 'Not run yet' }}</span>
+      <span class="mcs-lbl">Last Run</span>
+    </div>
+  </div>
+  <div class="mcs-actions">
+    <form method="post" action="/api/check-movement" id="movementForm" style="display:inline">
+      <button class="btn btn--neon" type="submit" id="movementButton">
+        <span class="live-dot" style="display:inline-block;vertical-align:middle;margin-right:0.4rem"></span>
+        Run Check
+      </button>
+    </form>
+    <a href="/download/movement_report.csv" class="btn btn--ghost">CSV</a>
+    <a href="/download/movement_report.json" class="btn btn--ghost">JSON</a>
+  </div>
+</div>
+
+{% if report.noteworthy %}
+<section class="section">
+  <h2 class="section-heading">Noteworthy Moves</h2>
+  <div class="movement-list-v2">
+    {% for row in report.noteworthy %}
+    {% set moved_up = row.decimal_move is number and row.decimal_move > 0 %}
+    {% set moved_down = row.decimal_move is number and row.decimal_move < 0 %}
+    <div class="mvcard {% if moved_up %}mvcard--up{% elif moved_down %}mvcard--down{% endif %}">
+      <div class="mvcard-signal">
+        {% if moved_up %}<span class="mvcard-arrow mvcard-arrow--up">▲</span>
+        {% elif moved_down %}<span class="mvcard-arrow mvcard-arrow--down">▼</span>
+        {% else %}<span class="mvcard-arrow">—</span>{% endif %}
+        <span class="value-badge value-badge--{{ row.value_label|lower|replace(' ', '-') }}">{{ row.value_label }}</span>
+      </div>
+      <div class="mvcard-main">
+        <div class="mvcard-fight">{{ row.fight }}</div>
+        <div class="mvcard-market">{{ row.market }} · {{ row.selection }} · {{ row.sportsbook }}</div>
+        <div class="mvcard-note">{{ row.note }}</div>
+      </div>
+      <div class="mvcard-prices">
+        <div class="mvcard-price">
+          <span>Was</span>
+          <strong>{% if row.old_decimal_odds != '' %}{{ "%.2f"|format(row.old_decimal_odds) }}{% else %}—{% endif %}</strong>
+        </div>
+        <div class="mvcard-price mvcard-price--now">
+          <span>Now</span>
+          <strong class="{% if moved_up %}profit{% elif moved_down %}loss{% endif %}">{{ "%.2f"|format(row.new_decimal_odds) }}</strong>
+        </div>
+        <div class="mvcard-price">
+          <span>Δ</span>
+          <strong class="{% if moved_up %}profit{% elif moved_down %}loss{% endif %}">
+            {% if row.decimal_move is number %}{{ "%+.2f"|format(row.decimal_move) }}{% else %}—{% endif %}
+          </strong>
+        </div>
+        <div class="mvcard-price">
+          <span>Edge</span>
+          <strong class="{% if row.edge is number and row.edge > 0 %}profit{% endif %}">
+            {% if row.edge is number %}{{ row.edge }}%{% else %}—{% endif %}
+          </strong>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+<section class="section">
+  <h2 class="section-heading">All Priced Movement</h2>
+  {% if not report.rows %}
+  <div class="empty-state">
+    <p>No movement report generated yet.</p>
+    <code>python src/check_movement.py</code>
+  </div>
+  {% else %}
+  <div class="table-wrap">
+    <table class="data-table betting-table">
+      <thead>
+        <tr>
+          <th>Move</th><th>Fight</th><th>Market</th><th>Selection</th>
+          <th>Book</th><th>Old</th><th>Now</th><th>Δ</th><th>Model</th><th>Edge</th><th>Value</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in report.rows %}
+        {% set up = row.decimal_move is number and row.decimal_move > 0 %}
+        {% set dn = row.decimal_move is number and row.decimal_move < 0 %}
+        <tr class="{% if up %}tr--up{% elif dn %}tr--down{% endif %}">
+          <td><span class="move-pip {% if up %}move-pip--up{% elif dn %}move-pip--down{% endif %}">{% if up %}▲{% elif dn %}▼{% else %}—{% endif %}</span> {{ row.movement_label }}</td>
+          <td>{{ row.fight }}</td>
+          <td>{{ row.market }}</td>
+          <td>{{ row.selection }}</td>
+          <td>{{ row.sportsbook }}</td>
+          <td style="color:var(--text-2)">{% if row.old_decimal_odds != '' %}{{ "%.2f"|format(row.old_decimal_odds) }}{% else %}—{% endif %}</td>
+          <td class="{% if up %}profit{% elif dn %}loss{% endif %}">{{ "%.2f"|format(row.new_decimal_odds) }}</td>
+          <td class="{% if up %}profit{% elif dn %}loss{% endif %}">{% if row.decimal_move is number %}{{ "%+.2f"|format(row.decimal_move) }}{% else %}—{% endif %}</td>
+          <td>{{ "%.0f"|format(row.model_probability * 100) }}%</td>
+          <td class="{% if row.edge is number and row.edge > 0 %}profit{% endif %}">{% if row.edge is number %}{{ row.edge }}%{% else %}—{% endif %}</td>
+          <td><span class="value-badge value-badge--{{ row.value_label|lower|replace(' ', '-') }}">{{ row.value_label }}</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</section>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const movementForm = document.getElementById('movementForm');
+  const movementButton = document.getElementById('movementButton');
+  if (movementForm && movementButton) {
+    movementForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      movementButton.disabled = true;
+      movementButton.textContent = 'Running...';
+      const res = await fetch('/api/check-movement', { method: 'POST' });
+      if (!res.ok) { movementButton.textContent = 'Error'; return; }
+      window.location.reload();
+    });
+  }
+</script>
+{% endblock %}
