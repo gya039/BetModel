@@ -149,17 +149,6 @@ def get(url, params=None):
     return r.json()
 
 
-def no_vig_probs(home_odds: float | None, away_odds: float | None) -> tuple[float | None, float | None]:
-    if not home_odds or not away_odds or home_odds <= 1 or away_odds <= 1:
-        return None, None
-    h_raw = 1.0 / home_odds
-    a_raw = 1.0 / away_odds
-    total = h_raw + a_raw
-    if total <= 0:
-        return None, None
-    return round(h_raw / total, 4), round(a_raw / total, 4)
-
-
 def fetch_completed(today: str) -> list[dict]:
     data = get(
         f"{MLB}/schedule",
@@ -446,9 +435,8 @@ def fetch_recent_bullpen_usage(completed: list[dict], pitchers: dict, target_dat
         yday_pids = team_day_pids[team_abbr].get(1, set())
         day2_pids = team_day_pids[team_abbr].get(2, set())
         usage[team_abbr]["bp_top2_used_yesterday"] = 1.0 if top2_ids & yday_pids else 0.0
-        usage[team_abbr]["bp_top2_backtoback"] = (
-            1.0 if (top2_ids & yday_pids) and (top2_ids & day2_pids) else 0.0
-        )
+        # Requires the same reliever in both days (3-way intersection)
+        usage[team_abbr]["bp_top2_backtoback"] = 1.0 if top2_ids & yday_pids & day2_pids else 0.0
         usage[team_abbr]["bp_top3_outs_last_3d"] = round(
             sum(team_day_top3_outs[team_abbr].values()), 1
         )
@@ -717,7 +705,9 @@ def decision_for_row(row: dict) -> tuple[str, str]:
         return "SKIP", "SKIP - No clear edge"
     if row.get("useRl"):
         pick_abbr = row["homeAbbr"] if row.get("pickSide") == "home" else row["awayAbbr"]
-        return "BET", f"{pick_abbr} -1.5 (Run Line)"
+        sp = row.get("spreadPoint")
+        sp_label = f"{sp:+g}" if sp is not None else "-1.5"
+        return "BET", f"{pick_abbr} {sp_label} (Run Line)"
     return "BET", moneyline_label(row)
 
 
@@ -1941,24 +1931,8 @@ if __name__ == "__main__":
                         spread_point = _best["line"]
                         spread_odds = _best["odds"]
                 elif pick_side == "away" and _away_options:
-                    # Away cover = P(margin < line) = P(-margin > -line)
-                    # Invert feature perspective by negating predicted margin proxy:
-                    # cover_prob for away at point S = 1 - cover_prob for home at -S
-                    _best = None
-                    best_edge_val = -999.0
-                    for opt in _away_options:
-                        _line = float(opt["line"])
-                        _odds = float(opt["odds"])
-                        if _odds <= 1.0:
-                            continue
-                        # Away covers if margin < _line  →  P(margin < _line) = cover_prob(home, _line) via complement
-                        _away_prob = 1.0 - spread_model.cover_prob(_sm_vec, _line)
-                        _implied = 1.0 / _odds
-                        _ev = round(_away_prob - _implied, 4)
-                        if _ev > best_edge_val:
-                            best_edge_val = _ev
-                            _best = {"line": _line, "odds": _odds, "cover_prob": round(_away_prob, 4), "edge": _ev}
-                    if _best and _best["edge"] > 0:
+                    _best = spread_model.best_away_cover_ev(_sm_vec, _away_options)
+                    if _best:
                         spread_edge = _best["edge"]
                         spread_point = _best["line"]
                         spread_odds = _best["odds"]

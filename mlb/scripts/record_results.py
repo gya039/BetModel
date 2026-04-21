@@ -553,11 +553,13 @@ if __name__ == "__main__":
         else:
             decision = "BET"
 
+        sp = row.get("spreadPoint")
+        sp_str = f" {sp:+g}" if (use_rl and sp is not None) else (" -1.5" if use_rl else "")
         pick_team = ""
         if pick_side == "home":
-            pick_team = home_team + (" -1.5" if use_rl else "")
+            pick_team = home_team + sp_str
         elif pick_side == "away":
-            pick_team = away_team + (" -1.5" if use_rl else "")
+            pick_team = away_team + sp_str
 
         if game_pk in already_done:
             print(f"  {away_team} @ {home_team}  — already settled, skipping")
@@ -621,11 +623,13 @@ if __name__ == "__main__":
         h_score = score["home_score"]
         a_score = score["away_score"]
         if use_rl:
-            # Run line -1.5: favoured team must win by 2+
+            # Cover threshold = -spreadPoint (all spread points are .5 so no push)
+            sp = row.get("spreadPoint")
+            threshold = -float(sp) if sp is not None else 1.5
             if pick_side == "home":
-                pick_won = h_score - a_score >= 2
+                pick_won = h_score - a_score > threshold
             else:
-                pick_won = a_score - h_score >= 2
+                pick_won = a_score - h_score > threshold
         else:
             home_won = score["home_win"]
             pick_won = (pick_side == "home") == home_won

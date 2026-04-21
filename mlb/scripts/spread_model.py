@@ -41,8 +41,15 @@ COMMON_SPREADS = [-5.5, -4.5, -3.5, -2.5, -1.5, -0.5, 0.5, 1.5, 2.5, 3.5, 4.5, 5
 
 # Validation thresholds to be considered "validated"
 MIN_TEST_GAMES = 200
-MAX_ECE_AT_MINUS_1_5 = 0.07    # calibration error at -1.5 line must be below 7%
-MIN_POSITIVE_ROI_SPREADS = 1   # at least 1 spread line must show positive simulated ROI
+# Calibration: ECE must be below 7% on both the most-common lines (-1.5 and -2.5)
+MAX_ECE_PRIMARY_LINES = 0.07
+PRIMARY_ECE_CHECK_LINES = [-1.5, -2.5]
+# ROI: at least 2 distinct spread lines must show positive simulated ROI
+MIN_POSITIVE_ROI_SPREADS = 2
+# Favourite bias: actual cover rate at -1.5 must be between 45% and 60%
+# (a model that shows 70%+ cover rate for favourites is overfit)
+COVER_RATE_MIN = 0.45
+COVER_RATE_MAX = 0.60
 
 
 class SpreadModel:
@@ -89,6 +96,7 @@ class SpreadModel:
     def best_cover_ev(self, feat_vec: list, spread_options: list[dict]) -> dict | None:
         """
         Given [{line, odds}, ...], find the highest-EV home-cover spread bet.
+        P(home covers line S) = P(margin > S).
         Returns {line, odds, cover_prob, edge} or None if no option has positive EV.
         """
         best: dict | None = None
@@ -101,34 +109,70 @@ class SpreadModel:
             implied = 1.0 / odds
             ev = round(prob - implied, 4)
             if best is None or ev > best["edge"]:
-                best = {
-                    "line": line,
-                    "odds": round(odds, 3),
-                    "cover_prob": round(prob, 4),
-                    "edge": ev,
-                }
+                best = {"line": line, "odds": round(odds, 3), "cover_prob": round(prob, 4), "edge": ev}
+        return best if best and best["edge"] > 0 else None
+
+    def best_away_cover_ev(self, feat_vec: list, spread_options: list[dict]) -> dict | None:
+        """
+        Given [{line, odds}, ...] for the AWAY team, find the highest-EV away-cover bet.
+        Away team covers line S (e.g. +1.5) when margin < S, i.e. P(margin < S) = 1 - cover_prob(S).
+        All home/away symmetry is handled here — callers never invert probabilities themselves.
+        Returns {line, odds, cover_prob, edge} or None if no option has positive EV.
+        """
+        best: dict | None = None
+        for opt in spread_options:
+            line = float(opt["line"])
+            odds = float(opt["odds"])
+            if odds <= 1.0:
+                continue
+            prob = 1.0 - self.cover_prob(feat_vec, line)  # P(away covers S)
+            implied = 1.0 / odds
+            ev = round(prob - implied, 4)
+            if best is None or ev > best["edge"]:
+                best = {"line": line, "odds": round(odds, 3), "cover_prob": round(prob, 4), "edge": ev}
         return best if best and best["edge"] > 0 else None
 
     def is_validated(self, diag: dict) -> tuple[bool, list[str]]:
         """
-        Check whether this model meets validation thresholds.
+        Check whether this model meets all validation thresholds.
         Returns (passed: bool, reasons: list[str]).
+        Checks: sample size, calibration on primary lines, positive ROI count,
+        and favourite cover-rate sanity (guards against overfit).
         """
         reasons = []
         ok = True
+
         if diag.get("n_test", 0) < MIN_TEST_GAMES:
             reasons.append(f"Insufficient test games: {diag.get('n_test')} < {MIN_TEST_GAMES}")
             ok = False
+
         ece_rows = {r["spread"]: r["ece"] for r in diag.get("ece_by_spread", [])}
-        if -1.5 in ece_rows and ece_rows[-1.5] > MAX_ECE_AT_MINUS_1_5:
-            reasons.append(f"ECE at -1.5 too high: {ece_rows[-1.5]:.4f} > {MAX_ECE_AT_MINUS_1_5}")
-            ok = False
-        positive_roi_count = sum(
-            1 for r in diag.get("roi_by_spread", []) if r.get("roi", -999) > 0
-        )
+        for line in PRIMARY_ECE_CHECK_LINES:
+            if line in ece_rows:
+                if ece_rows[line] > MAX_ECE_PRIMARY_LINES:
+                    reasons.append(
+                        f"ECE at {line:+g} too high: {ece_rows[line]:.4f} > {MAX_ECE_PRIMARY_LINES}"
+                    )
+                    ok = False
+            else:
+                reasons.append(f"ECE data missing for {line:+g} line (too few samples?)")
+                ok = False
+
+        positive_roi_count = sum(1 for r in diag.get("roi_by_spread", []) if r.get("roi", -999) > 0)
         if positive_roi_count < MIN_POSITIVE_ROI_SPREADS:
-            reasons.append(f"No positive-ROI spread lines (need {MIN_POSITIVE_ROI_SPREADS})")
+            reasons.append(
+                f"Only {positive_roi_count} positive-ROI spread lines (need {MIN_POSITIVE_ROI_SPREADS})"
+            )
             ok = False
+
+        fav_cr = diag.get("fav_cover_rate_at_minus_1_5")
+        if fav_cr is not None and not (COVER_RATE_MIN <= fav_cr <= COVER_RATE_MAX):
+            reasons.append(
+                f"Favourite cover rate at -1.5 is {fav_cr:.3f} — outside [{COVER_RATE_MIN}, {COVER_RATE_MAX}] "
+                "(possible overfit or miscalibration)"
+            )
+            ok = False
+
         if ok:
             reasons.append("All validation thresholds passed.")
         return ok, reasons

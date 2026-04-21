@@ -182,9 +182,9 @@ def _bullpen_fatigue(team: str, game_date: pd.Timestamp, bullpen_daily: dict, to
     yday_pids = set(pid for r in yday for pid in r.get("pitcher_ids", []))
     bp_top2_used_yesterday = 1 if top2_ids & yday_pids else 0
 
-    # New: top 2 used on back-to-back days (yesterday AND day before)
+    # New: same top-2 reliever used on back-to-back days (intersection requires same pid)
     day2_pids = set(pid for r in day2 for pid in r.get("pitcher_ids", []))
-    bp_top2_backtoback = 1 if (top2_ids & yday_pids) and (top2_ids & day2_pids) else 0
+    bp_top2_backtoback = 1 if top2_ids & yday_pids & day2_pids else 0
 
     # New: outs pitched by top 3 in last 3 days
     top3_outs = 0.0

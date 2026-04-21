@@ -541,7 +541,9 @@ def save_updated_predictions(original_path: Path, predictions: list, bankroll: f
             pick_label = "SKIP"
         else:
             team = home if pick_side == "home" else away
-            pick_label = f"{team} -1.5" if use_rl else f"{team} ML"
+            sp = p.get("spreadPoint")
+            sp_str = f"{sp:+g}" if sp is not None else "-1.5"
+            pick_label = f"{team} {sp_str}" if use_rl else f"{team} ML"
         odds  = p.get("pickOdds") or ""
         edge  = p.get("edge", 0.0)
         stake = p.get("stake", {})
@@ -806,7 +808,9 @@ def main():
             if pick_side == "none":
                 pick_label = "NO PICK"
             else:
-                pick_label = (home if pick_side == "home" else away) + (" -1.5" if use_rl else " ML")
+                _sp = p.get("spreadPoint")
+                _sp_str = f" {_sp:+g}" if _sp is not None else " -1.5"
+                pick_label = (home if pick_side == "home" else away) + (_sp_str if use_rl else " ML")
             stored_odds = p.get("pickOdds")
             stored_str = f"{stored_odds:.2f}" if stored_odds else "  —  "
 
