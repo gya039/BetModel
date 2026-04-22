@@ -1,0 +1,420 @@
+{
+  "n_test": 479,
+  "residual_std": 4.485,
+  "mae": 3.607,
+  "rmse": 4.608,
+  "fav_cover_rate_at_minus_1_5": 0.3528,
+  "dog_cover_rate_at_plus_1_5": 0.6305,
+  "home_minus_1_5_cover_rate": 0.3528,
+  "home_plus_1_5_cover_rate": 0.6305,
+  "ece_by_spread": [
+    {
+      "spread": -5.5,
+      "n": 479,
+      "cover_rate": 0.1127,
+      "mean_pred_prob": 0.115,
+      "ece": 0.0023,
+      "mae_prob": 0.2024
+    },
+    {
+      "spread": -4.5,
+      "n": 479,
+      "cover_rate": 0.1545,
+      "mean_pred_prob": 0.1633,
+      "ece": 0.0088,
+      "mae_prob": 0.2683
+    },
+    {
+      "spread": -3.5,
+      "n": 479,
+      "cover_rate": 0.2109,
+      "mean_pred_prob": 0.2231,
+      "ece": 0.0113,
+      "mae_prob": 0.3408
+    },
+    {
+      "spread": -2.5,
+      "n": 479,
+      "cover_rate": 0.2756,
+      "mean_pred_prob": 0.2936,
+      "ece": 0.0162,
+      "mae_prob": 0.4083
+    },
+    {
+      "spread": -1.5,
+      "n": 479,
+      "cover_rate": 0.3528,
+      "mean_pred_prob": 0.3731,
+      "ece": 0.0532,
+      "mae_prob": 0.4579
+    },
+    {
+      "spread": -0.5,
+      "n": 479,
+      "cover_rate": 0.5303,
+      "mean_pred_prob": 0.4584,
+      "ece": 0.0753,
+      "mae_prob": 0.4972
+    },
+    {
+      "spread": 0.5,
+      "n": 479,
+      "cover_rate": 0.5303,
+      "mean_pred_prob": 0.5456,
+      "ece": 0.0438,
+      "mae_prob": 0.492
+    },
+    {
+      "spread": 1.5,
+      "n": 479,
+      "cover_rate": 0.6305,
+      "mean_pred_prob": 0.6307,
+      "ece": 0.0479,
+      "mae_prob": 0.4614
+    },
+    {
+      "spread": 2.5,
+      "n": 479,
+      "cover_rate": 0.7244,
+      "mean_pred_prob": 0.7098,
+      "ece": 0.0158,
+      "mae_prob": 0.3991
+    },
+    {
+      "spread": 3.5,
+      "n": 479,
+      "cover_rate": 0.7933,
+      "mean_pred_prob": 0.7799,
+      "ece": 0.0188,
+      "mae_prob": 0.3296
+    },
+    {
+      "spread": 4.5,
+      "n": 479,
+      "cover_rate": 0.8518,
+      "mean_pred_prob": 0.8391,
+      "ece": 0.0127,
+      "mae_prob": 0.2559
+    },
+    {
+      "spread": 5.5,
+      "n": 479,
+      "cover_rate": 0.8914,
+      "mean_pred_prob": 0.8868,
+      "ece": 0.0046,
+      "mae_prob": 0.1938
+    }
+  ],
+  "roi_by_spread": [
+    {
+      "spread": -0.5,
+      "n_bets": 49,
+      "win_rate": 0.6327,
+      "roi": 0.2077
+    },
+    {
+      "spread": 0.5,
+      "n_bets": 224,
+      "win_rate": 0.558,
+      "roi": 0.0653
+    },
+    {
+      "spread": 1.5,
+      "n_bets": 412,
+      "win_rate": 0.6408,
+      "roi": 0.2232
+    },
+    {
+      "spread": 2.5,
+      "n_bets": 475,
+      "win_rate": 0.7284,
+      "roi": 0.3906
+    },
+    {
+      "spread": 3.5,
+      "n_bets": 479,
+      "win_rate": 0.7933,
+      "roi": 0.5144
+    },
+    {
+      "spread": 4.5,
+      "n_bets": 479,
+      "win_rate": 0.8518,
+      "roi": 0.626
+    },
+    {
+      "spread": 5.5,
+      "n_bets": 479,
+      "win_rate": 0.8914,
+      "roi": 0.7018
+    }
+  ],
+  "calibration": [
+    {
+      "spread": -5.5,
+      "prob_bucket": "(-0.001, 0.35]",
+      "n": 479,
+      "mean_pred_prob": 0.115,
+      "actual_cover_rate": 0.1127
+    },
+    {
+      "spread": -4.5,
+      "prob_bucket": "(-0.001, 0.35]",
+      "n": 479,
+      "mean_pred_prob": 0.1633,
+      "actual_cover_rate": 0.1545
+    },
+    {
+      "spread": -3.5,
+      "prob_bucket": "(-0.001, 0.35]",
+      "n": 472,
+      "mean_pred_prob": 0.2208,
+      "actual_cover_rate": 0.2119
+    },
+    {
+      "spread": -3.5,
+      "prob_bucket": "(0.35, 0.4]",
+      "n": 6,
+      "mean_pred_prob": 0.365,
+      "actual_cover_rate": 0.1667
+    },
+    {
+      "spread": -2.5,
+      "prob_bucket": "(-0.001, 0.35]",
+      "n": 380,
+      "mean_pred_prob": 0.2697,
+      "actual_cover_rate": 0.2711
+    },
+    {
+      "spread": -2.5,
+      "prob_bucket": "(0.35, 0.4]",
+      "n": 74,
+      "mean_pred_prob": 0.3714,
+      "actual_cover_rate": 0.2838
+    },
+    {
+      "spread": -2.5,
+      "prob_bucket": "(0.4, 0.45]",
+      "n": 21,
+      "mean_pred_prob": 0.4177,
+      "actual_cover_rate": 0.381
+    },
+    {
+      "spread": -1.5,
+      "prob_bucket": "(-0.001, 0.35]",
+      "n": 190,
+      "mean_pred_prob": 0.304,
+      "actual_cover_rate": 0.3368
+    },
+    {
+      "spread": -1.5,
+      "prob_bucket": "(0.35, 0.4]",
+      "n": 119,
+      "mean_pred_prob": 0.3753,
+      "actual_cover_rate": 0.3445
+    },
+    {
+      "spread": -1.5,
+      "prob_bucket": "(0.4, 0.45]",
+      "n": 96,
+      "mean_pred_prob": 0.4224,
+      "actual_cover_rate": 0.3646
+    },
+    {
+      "spread": -1.5,
+      "prob_bucket": "(0.45, 0.5]",
+      "n": 56,
+      "mean_pred_prob": 0.4696,
+      "actual_cover_rate": 0.3214
+    },
+    {
+      "spread": -1.5,
+      "prob_bucket": "(0.5, 0.55]",
+      "n": 16,
+      "mean_pred_prob": 0.5163,
+      "actual_cover_rate": 0.625
+    },
+    {
+      "spread": -0.5,
+      "prob_bucket": "(-0.001, 0.35]",
+      "n": 37,
+      "mean_pred_prob": 0.3223,
+      "actual_cover_rate": 0.4595
+    },
+    {
+      "spread": -0.5,
+      "prob_bucket": "(0.35, 0.4]",
+      "n": 64,
+      "mean_pred_prob": 0.378,
+      "actual_cover_rate": 0.5312
+    },
+    {
+      "spread": -0.5,
+      "prob_bucket": "(0.4, 0.45]",
+      "n": 118,
+      "mean_pred_prob": 0.4232,
+      "actual_cover_rate": 0.5085
+    },
+    {
+      "spread": -0.5,
+      "prob_bucket": "(0.45, 0.5]",
+      "n": 118,
+      "mean_pred_prob": 0.4745,
+      "actual_cover_rate": 0.5339
+    },
+    {
+      "spread": -0.5,
+      "prob_bucket": "(0.5, 0.55]",
+      "n": 85,
+      "mean_pred_prob": 0.5233,
+      "actual_cover_rate": 0.5294
+    },
+    {
+      "spread": -0.5,
+      "prob_bucket": "(0.55, 0.6]",
+      "n": 48,
+      "mean_pred_prob": 0.5699,
+      "actual_cover_rate": 0.625
+    },
+    {
+      "spread": -0.5,
+      "prob_bucket": "(0.6, 0.65]",
+      "n": 8,
+      "mean_pred_prob": 0.6213,
+      "actual_cover_rate": 0.5
+    },
+    {
+      "spread": 0.5,
+      "prob_bucket": "(0.35, 0.4]",
+      "n": 9,
+      "mean_pred_prob": 0.3857,
+      "actual_cover_rate": 0.5556
+    },
+    {
+      "spread": 0.5,
+      "prob_bucket": "(0.4, 0.45]",
+      "n": 43,
+      "mean_pred_prob": 0.429,
+      "actual_cover_rate": 0.4419
+    },
+    {
+      "spread": 0.5,
+      "prob_bucket": "(0.45, 0.5]",
+      "n": 78,
+      "mean_pred_prob": 0.4811,
+      "actual_cover_rate": 0.5256
+    },
+    {
+      "spread": 0.5,
+      "prob_bucket": "(0.5, 0.55]",
+      "n": 114,
+      "mean_pred_prob": 0.5239,
+      "actual_cover_rate": 0.5351
+    },
+    {
+      "spread": 0.5,
+      "prob_bucket": "(0.55, 0.6]",
+      "n": 114,
+      "mean_pred_prob": 0.574,
+      "actual_cover_rate": 0.5088
+    },
+    {
+      "spread": 0.5,
+      "prob_bucket": "(0.6, 0.65]",
+      "n": 84,
+      "mean_pred_prob": 0.6237,
+      "actual_cover_rate": 0.5476
+    },
+    {
+      "spread": 0.5,
+      "prob_bucket": "(0.65, 1.0]",
+      "n": 35,
+      "mean_pred_prob": 0.6768,
+      "actual_cover_rate": 0.6857
+    },
+    {
+      "spread": 1.5,
+      "prob_bucket": "(0.45, 0.5]",
+      "n": 18,
+      "mean_pred_prob": 0.4832,
+      "actual_cover_rate": 0.5556
+    },
+    {
+      "spread": 1.5,
+      "prob_bucket": "(0.5, 0.55]",
+      "n": 44,
+      "mean_pred_prob": 0.5287,
+      "actual_cover_rate": 0.5682
+    },
+    {
+      "spread": 1.5,
+      "prob_bucket": "(0.55, 0.6]",
+      "n": 102,
+      "mean_pred_prob": 0.5805,
+      "actual_cover_rate": 0.6667
+    },
+    {
+      "spread": 1.5,
+      "prob_bucket": "(0.6, 0.65]",
+      "n": 115,
+      "mean_pred_prob": 0.6259,
+      "actual_cover_rate": 0.6
+    },
+    {
+      "spread": 1.5,
+      "prob_bucket": "(0.65, 1.0]",
+      "n": 198,
+      "mean_pred_prob": 0.6976,
+      "actual_cover_rate": 0.6566
+    },
+    {
+      "spread": 2.5,
+      "prob_bucket": "(0.55, 0.6]",
+      "n": 22,
+      "mean_pred_prob": 0.5778,
+      "actual_cover_rate": 0.6364
+    },
+    {
+      "spread": 2.5,
+      "prob_bucket": "(0.6, 0.65]",
+      "n": 54,
+      "mean_pred_prob": 0.6255,
+      "actual_cover_rate": 0.6481
+    },
+    {
+      "spread": 2.5,
+      "prob_bucket": "(0.65, 1.0]",
+      "n": 400,
+      "mean_pred_prob": 0.7299,
+      "actual_cover_rate": 0.7425
+    },
+    {
+      "spread": 3.5,
+      "prob_bucket": "(0.6, 0.65]",
+      "n": 5,
+      "mean_pred_prob": 0.6427,
+      "actual_cover_rate": 0.4
+    },
+    {
+      "spread": 3.5,
+      "prob_bucket": "(0.65, 1.0]",
+      "n": 472,
+      "mean_pred_prob": 0.7822,
+      "actual_cover_rate": 0.7987
+    },
+    {
+      "spread": 4.5,
+      "prob_bucket": "(0.65, 1.0]",
+      "n": 479,
+      "mean_pred_prob": 0.8391,
+      "actual_cover_rate": 0.8518
+    },
+    {
+      "spread": 5.5,
+      "prob_bucket": "(0.65, 1.0]",
+      "n": 479,
+      "mean_pred_prob": 0.8868,
+      "actual_cover_rate": 0.8914
+    }
+  ]
+}

@@ -1,0 +1,197 @@
+name: MLB Cloud Runner
+
+on:
+  workflow_dispatch:
+    inputs:
+      command:
+        description: "Which MLB workflow to run"
+        required: true
+        default: "check-movement"
+        type: choice
+        options:
+          - generate-mlb-predictions
+          - check-movement
+          - settle-results
+      date:
+        description: "Target date in YYYY-MM-DD. Leave blank for today in Europe/Dublin."
+        required: false
+        type: string
+      persist_outputs:
+        description: "Commit generated prediction/result outputs back to this branch"
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mlb-cloud-run
+  cancel-in-progress: false
+
+jobs:
+  run-mlb:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      PYTHONUNBUFFERED: "1"
+
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Prepare output folders
+        run: |
+          mkdir -p mlb/data/raw
+          mkdir -p mlb/data/processed
+          mkdir -p mlb/models
+          mkdir -p mlb/predictions/odds_archive
+          mkdir -p mlb/predictions/diagnostics
+          mkdir -p mlb/reports
+
+      - name: Verify required artifacts
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          required = [
+              Path("mlb/models/moneyline_model.pkl"),
+              Path("mlb/models/spread_model.pkl"),
+              Path("mlb/models/spread_model_diagnostics.json"),
+              Path("mlb/data/processed/games_processed.csv"),
+          ]
+          missing = [str(path) for path in required if not path.exists()]
+          if missing:
+              raise SystemExit("Missing required cloud-run artifacts:\n" + "\n".join(missing))
+          PY
+
+      - name: Resolve dates
+        id: dates
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import os
+          from datetime import datetime, timedelta
+          from zoneinfo import ZoneInfo
+
+          raw_date = "${{ inputs.date }}".strip()
+          run_date = raw_date or datetime.now(ZoneInfo("Europe/Dublin")).date().isoformat()
+          yesterday = (datetime.fromisoformat(run_date).date() - timedelta(days=1)).isoformat()
+          print(f"run_date={run_date}")
+          print(f"yesterday={yesterday}")
+          PY
+
+      - name: Run selected MLB command
+        run: |
+          case "${{ inputs.command }}" in
+            generate-mlb-predictions)
+              python mlb/scripts/record_results.py --date "${{ steps.dates.outputs.yesterday }}"
+              python mlb/scripts/predict_today.py --date "${{ steps.dates.outputs.run_date }}"
+              ;;
+            check-movement)
+              python mlb/scripts/check_movement.py --date "${{ steps.dates.outputs.run_date }}"
+              ;;
+            settle-results)
+              python mlb/scripts/record_results.py --date "${{ steps.dates.outputs.run_date }}"
+              ;;
+            *)
+              echo "Unknown command: ${{ inputs.command }}"
+              exit 2
+              ;;
+          esac
+
+      - name: Locate report
+        id: report
+        if: always()
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          from datetime import datetime
+          from pathlib import Path
+
+          command = "${{ inputs.command }}"
+          run_date = "${{ steps.dates.outputs.run_date }}"
+          report = None
+          if command in {"generate-mlb-predictions", "check-movement"}:
+              dt = datetime.fromisoformat(run_date)
+              day = dt.day
+              suffix = "th" if 10 <= day % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
+              label = f"{dt.strftime('%B')} {day}{suffix} {dt.year}"
+              folder = Path("mlb/predictions") / f"{dt.strftime('%B')} Predictions" / f"{dt.strftime('%B')} {day}{suffix}"
+              name = f"{label} Predictions"
+              if command == "check-movement":
+                  name += " (Updated)"
+              report = folder / f"{name}.md"
+              if not report.exists():
+                  report = None
+          if report:
+              print(f"path={report.as_posix()}")
+              print(f"name={report.name}")
+          PY
+
+      - name: Upload report artifact
+        if: steps.report.outputs.path != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-report-${{ inputs.command }}-${{ steps.dates.outputs.run_date }}
+          path: ${{ steps.report.outputs.path }}
+
+      - name: Send Telegram report
+        if: steps.report.outputs.path != '' && env.TELEGRAM_BOT_TOKEN != '' && env.TELEGRAM_CHAT_ID != ''
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          import requests
+
+          token = os.environ["TELEGRAM_BOT_TOKEN"]
+          chat_id = os.environ["TELEGRAM_CHAT_ID"]
+          report = Path("${{ steps.report.outputs.path }}")
+          command = "${{ inputs.command }}"
+          run_date = "${{ steps.dates.outputs.run_date }}"
+          run_url = f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}"
+
+          text = (
+              f"Diamond Edge cloud run finished\n"
+              f"Command: {command}\n"
+              f"Date: {run_date}\n"
+              f"Report: {report.name}\n"
+              f"Run: {run_url}"
+          )
+          base = f"https://api.telegram.org/bot{token}"
+          requests.post(f"{base}/sendMessage", data={"chat_id": chat_id, "text": text}, timeout=30).raise_for_status()
+          with report.open("rb") as handle:
+              requests.post(
+                  f"{base}/sendDocument",
+                  data={"chat_id": chat_id, "caption": report.name},
+                  files={"document": (report.name, handle, "text/markdown")},
+                  timeout=60,
+              ).raise_for_status()
+          PY
+
+      - name: Persist generated outputs
+        if: inputs.persist_outputs
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add mlb/predictions mlb/reports
+          if git diff --cached --quiet; then
+            echo "No generated output changes to commit."
+          else
+            git commit -m "MLB cloud run outputs for ${{ steps.dates.outputs.run_date }}"
+            git push
+          fi
