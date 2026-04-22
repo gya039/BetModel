@@ -92,8 +92,24 @@ jobs:
           raw_date = "${{ inputs.date }}".strip()
           run_date = raw_date or datetime.now(ZoneInfo("Europe/Dublin")).date().isoformat()
           yesterday = (datetime.fromisoformat(run_date).date() - timedelta(days=1)).isoformat()
+          today = datetime.now(ZoneInfo("Europe/Dublin")).date().isoformat()
           print(f"run_date={run_date}")
           print(f"yesterday={yesterday}")
+          print(f"today={today}")
+          PY
+
+      - name: Safety guard
+        run: |
+          python - <<'PY'
+          command = "${{ inputs.command }}"
+          run_date = "${{ steps.dates.outputs.run_date }}"
+          today = "${{ steps.dates.outputs.today }}"
+          if command == "generate-mlb-predictions" and run_date != today:
+              raise SystemExit(
+                  "Refusing to run generate-mlb-predictions for a non-today date. "
+                  f"Requested {run_date}, today is {today} in Europe/Dublin. "
+                  "Use check-movement for existing prediction files or settle-results for completed dates."
+              )
           PY
 
       - name: Run selected MLB command
