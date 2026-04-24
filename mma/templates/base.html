@@ -8,6 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=ui-polish-9">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style-v3.css') }}?v=2">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -18,7 +19,7 @@
         <span class="nav-hex">⬡</span>
         <span class="nav-title">OCTAGON <span class="nav-accent">IQ</span></span>
       </a>
-      <div class="nav-links">
+      <div class="nav-links" id="navLinks">
         <a href="/" class="nav-link {% if request.path == '/' %}active{% endif %}">Home</a>
         <a href="/fighters" class="nav-link {% if '/fighters' in request.path %}active{% endif %}">Fighters</a>
         <a href="/betting" class="nav-link {% if '/betting' in request.path %}active{% endif %}">Betting</a>
@@ -26,8 +27,30 @@
         <a href="/bankroll" class="nav-link {% if '/bankroll' in request.path %}active{% endif %}">Bankroll</a>
         <a href="/export" class="nav-link {% if '/export' in request.path %}active{% endif %}">Export</a>
       </div>
+      <button class="nav-hamburger" id="navHamburger" aria-label="Toggle menu">
+        <span></span><span></span><span></span>
+      </button>
     </div>
   </nav>
+  <script>
+    (function(){
+      var btn = document.getElementById('navHamburger');
+      var links = document.getElementById('navLinks');
+      if(!btn || !links) return;
+      btn.addEventListener('click', function(){
+        var open = links.classList.toggle('v3-open');
+        btn.classList.toggle('open', open);
+        document.body.style.overflow = open ? 'hidden' : '';
+      });
+      links.querySelectorAll('.nav-link').forEach(function(a){
+        a.addEventListener('click', function(){
+          links.classList.remove('v3-open');
+          btn.classList.remove('open');
+          document.body.style.overflow = '';
+        });
+      });
+    })();
+  </script>
 
   <main class="page-body">
     {% block content %}{% endblock %}

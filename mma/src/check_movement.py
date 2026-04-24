@@ -25,6 +25,8 @@ log = get_logger("check_movement")
 MOVEMENT_DIR = DATA_PROC / "betting"
 MOVEMENT_JSON = MOVEMENT_DIR / "movement_report.json"
 MOVEMENT_CSV = MOVEMENT_DIR / "movement_report.csv"
+SIGNIFICANT_MOVE_DELTA = 0.05
+SIGNIFICANT_EDGE_ABS = 5.0
 
 
 def latest_odds_path() -> Path:
@@ -140,23 +142,39 @@ def build_report(baseline_path: Path | None, current_path: Path) -> dict:
                     "confidence": row.get("confidence"),
                     "value_label": row.get("label"),
                     "movement_label": label,
+                    "significant_move": bool(
+                        label in {"Shortened", "Drifted"}
+                        and isinstance(decimal_move, (int, float))
+                        and abs(decimal_move) >= SIGNIFICANT_MOVE_DELTA
+                    ),
+                    "value_opinion": bool(
+                        row.get("label") in {"Best Bet", "Lean", "Small Value"}
+                        or (isinstance(row.get("edge"), (int, float)) and abs(row["edge"]) >= SIGNIFICANT_EDGE_ABS)
+                    ),
                     "note": movement_note(row, old, label),
                 }
             )
 
-    noteworthy = [
-        row for row in movement_rows
-        if row["movement_label"] in {"Shortened", "Drifted"}
-        or row.get("value_label") in {"Best Bet", "Lean", "Small Value"}
-        or (isinstance(row.get("edge"), (int, float)) and abs(row["edge"]) >= 5)
-    ]
-    noteworthy.sort(
+    movers = [row for row in movement_rows if row["significant_move"]]
+    movers.sort(
         key=lambda row: (
             abs(row["decimal_move"]) if isinstance(row.get("decimal_move"), (int, float)) else 0,
             abs(row["edge"]) if isinstance(row.get("edge"), (int, float)) else 0,
         ),
         reverse=True,
     )
+    value_holds = [
+        row for row in movement_rows
+        if row["value_opinion"] and not row["significant_move"]
+    ]
+    value_holds.sort(
+        key=lambda row: (
+            abs(row["edge"]) if isinstance(row.get("edge"), (int, float)) else 0,
+            row.get("model_probability") if isinstance(row.get("model_probability"), (int, float)) else 0,
+        ),
+        reverse=True,
+    )
+    moved_rows = [row for row in movement_rows if row["movement_label"] in {"Shortened", "Drifted", "New Market"}]
 
     fetched_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     return {
@@ -164,9 +182,13 @@ def build_report(baseline_path: Path | None, current_path: Path) -> dict:
         "baseline_file": str(baseline_path) if baseline_path else "",
         "current_file": str(current_path),
         "markets_compared": len(movement_rows),
-        "noteworthy_count": len(noteworthy),
+        "noteworthy_count": len(movers),
+        "significant_move_count": len(movers),
+        "value_hold_count": len(value_holds),
         "rows": movement_rows,
-        "noteworthy": noteworthy[:30],
+        "moved_rows": moved_rows,
+        "noteworthy": movers[:12],
+        "value_holds": value_holds[:10],
     }
 
 

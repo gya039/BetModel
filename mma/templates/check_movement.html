@@ -1,5 +1,40 @@
 {% extends "base.html" %}
-{% block title %}Octagon IQ — Odds Movement{% endblock %}
+{% block title %}Octagon IQ - Odds Movement{% endblock %}
+
+{% macro row_card(row) -%}
+  {% set moved_up = row.decimal_move is number and row.decimal_move > 0 %}
+  {% set moved_down = row.decimal_move is number and row.decimal_move < 0 %}
+  <div class="mvrow {% if moved_up %}mvrow--up{% elif moved_down %}mvrow--down{% endif %}">
+    <div class="mvrow__signal">
+      {% if moved_up %}<span class="mvrow__arrow mvrow__arrow--up">▲</span>
+      {% elif moved_down %}<span class="mvrow__arrow mvrow__arrow--down">▼</span>
+      {% else %}<span class="mvrow__arrow">—</span>{% endif %}
+      <span class="value-badge value-badge--{{ row.movement_label|lower|replace(' ', '-') }}">{{ row.movement_label }}</span>
+    </div>
+    <div class="mvrow__main">
+      <div class="mvrow__market">{{ row.selection }} · {{ row.market }} · {{ row.sportsbook }}</div>
+      <div class="mvrow__note">{{ row.note }}</div>
+    </div>
+    <div class="mvrow__stats">
+      <div class="mvstat">
+        <span>Was</span>
+        <strong>{% if row.old_decimal_odds != '' %}{{ "%.2f"|format(row.old_decimal_odds) }}{% else %}—{% endif %}</strong>
+      </div>
+      <div class="mvstat">
+        <span>Now</span>
+        <strong class="{% if moved_up %}profit{% elif moved_down %}loss{% endif %}">{{ "%.2f"|format(row.new_decimal_odds) }}</strong>
+      </div>
+      <div class="mvstat">
+        <span>Delta</span>
+        <strong class="{% if moved_up %}profit{% elif moved_down %}loss{% endif %}">{% if row.decimal_move is number %}{{ "%+.2f"|format(row.decimal_move) }}{% else %}—{% endif %}</strong>
+      </div>
+      <div class="mvstat">
+        <span>Edge</span>
+        <strong class="{% if row.edge is number and row.edge > 0 %}profit{% endif %}">{% if row.edge is number %}{{ row.edge }}%{% else %}—{% endif %}</strong>
+      </div>
+    </div>
+  </div>
+{%- endmacro %}
 
 {% block content %}
 
@@ -16,12 +51,17 @@
     </div>
     <div class="mcs-divider"></div>
     <div class="mcs-stat">
-      <span class="mcs-val {% if report.noteworthy_count > 0 %}profit{% endif %}">{{ report.noteworthy_count }}</span>
-      <span class="mcs-lbl">Noteworthy Moves</span>
+      <span class="mcs-val {% if report.significant_move_count > 0 %}profit{% endif %}">{{ report.significant_move_count }}</span>
+      <span class="mcs-lbl">Real Moves</span>
     </div>
     <div class="mcs-divider"></div>
     <div class="mcs-stat">
-      <span class="mcs-val" style="color:var(--text-2);font-size:0.8rem">{{ report.generated_at or 'Not run yet' }}</span>
+      <span class="mcs-val" style="color:var(--gold)">{{ report.value_hold_count }}</span>
+      <span class="mcs-lbl">Value Holds</span>
+    </div>
+    <div class="mcs-divider"></div>
+    <div class="mcs-stat">
+      <span class="mcs-val mcs-val--ts" id="lastRunTs" data-iso="{{ report.generated_at or '' }}">{{ report.generated_at or 'Not run yet' }}</span>
       <span class="mcs-lbl">Last Run</span>
     </div>
   </div>
@@ -37,89 +77,111 @@
   </div>
 </div>
 
-{% if report.noteworthy %}
 <section class="section">
-  <h2 class="section-heading">Noteworthy Moves</h2>
-  <div class="movement-list-v2">
-    {% for row in report.noteworthy %}
-    {% set moved_up = row.decimal_move is number and row.decimal_move > 0 %}
-    {% set moved_down = row.decimal_move is number and row.decimal_move < 0 %}
-    <div class="mvcard {% if moved_up %}mvcard--up{% elif moved_down %}mvcard--down{% endif %}">
-      <div class="mvcard-signal">
-        {% if moved_up %}<span class="mvcard-arrow mvcard-arrow--up">▲</span>
-        {% elif moved_down %}<span class="mvcard-arrow mvcard-arrow--down">▼</span>
-        {% else %}<span class="mvcard-arrow">—</span>{% endif %}
-        <span class="value-badge value-badge--{{ row.value_label|lower|replace(' ', '-') }}">{{ row.value_label }}</span>
-      </div>
-      <div class="mvcard-main">
-        <div class="mvcard-fight">{{ row.fight }}</div>
-        <div class="mvcard-market">{{ row.market }} · {{ row.selection }} · {{ row.sportsbook }}</div>
-        <div class="mvcard-note">{{ row.note }}</div>
-      </div>
-      <div class="mvcard-prices">
-        <div class="mvcard-price">
-          <span>Was</span>
-          <strong>{% if row.old_decimal_odds != '' %}{{ "%.2f"|format(row.old_decimal_odds) }}{% else %}—{% endif %}</strong>
-        </div>
-        <div class="mvcard-price mvcard-price--now">
-          <span>Now</span>
-          <strong class="{% if moved_up %}profit{% elif moved_down %}loss{% endif %}">{{ "%.2f"|format(row.new_decimal_odds) }}</strong>
-        </div>
-        <div class="mvcard-price">
-          <span>Δ</span>
-          <strong class="{% if moved_up %}profit{% elif moved_down %}loss{% endif %}">
-            {% if row.decimal_move is number %}{{ "%+.2f"|format(row.decimal_move) }}{% else %}—{% endif %}
-          </strong>
-        </div>
-        <div class="mvcard-price">
-          <span>Edge</span>
-          <strong class="{% if row.edge is number and row.edge > 0 %}profit{% endif %}">
-            {% if row.edge is number %}{{ row.edge }}%{% else %}—{% endif %}
-          </strong>
-        </div>
-      </div>
+  <div class="section-heading-row">
+    <div>
+      <h2 class="section-heading">Real Line Movement</h2>
+      <p class="section-blurb">One collapsible fight block per fight. Open only the fights you care about.</p>
     </div>
-    {% endfor %}
   </div>
-</section>
-{% endif %}
-
-<section class="section">
-  <h2 class="section-heading">All Priced Movement</h2>
-  {% if not report.rows %}
-  <div class="empty-state">
-    <p>No movement report generated yet.</p>
-    <code>python src/check_movement.py</code>
+  {% if not report.moved_groups %}
+  <div class="empty-state movement-empty">
+    <p>No real movement detected yet.</p>
   </div>
   {% else %}
-  <div class="table-wrap">
-    <table class="data-table betting-table">
-      <thead>
-        <tr>
-          <th>Move</th><th>Fight</th><th>Market</th><th>Selection</th>
-          <th>Book</th><th>Old</th><th>Now</th><th>Δ</th><th>Model</th><th>Edge</th><th>Value</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for row in report.rows %}
-        {% set up = row.decimal_move is number and row.decimal_move > 0 %}
-        {% set dn = row.decimal_move is number and row.decimal_move < 0 %}
-        <tr class="{% if up %}tr--up{% elif dn %}tr--down{% endif %}">
-          <td><span class="move-pip {% if up %}move-pip--up{% elif dn %}move-pip--down{% endif %}">{% if up %}▲{% elif dn %}▼{% else %}—{% endif %}</span> {{ row.movement_label }}</td>
-          <td>{{ row.fight }}</td>
-          <td>{{ row.market }}</td>
-          <td>{{ row.selection }}</td>
-          <td>{{ row.sportsbook }}</td>
-          <td style="color:var(--text-2)">{% if row.old_decimal_odds != '' %}{{ "%.2f"|format(row.old_decimal_odds) }}{% else %}—{% endif %}</td>
-          <td class="{% if up %}profit{% elif dn %}loss{% endif %}">{{ "%.2f"|format(row.new_decimal_odds) }}</td>
-          <td class="{% if up %}profit{% elif dn %}loss{% endif %}">{% if row.decimal_move is number %}{{ "%+.2f"|format(row.decimal_move) }}{% else %}—{% endif %}</td>
-          <td>{{ "%.0f"|format(row.model_probability * 100) }}%</td>
-          <td class="{% if row.edge is number and row.edge > 0 %}profit{% endif %}">{% if row.edge is number %}{{ row.edge }}%{% else %}—{% endif %}</td>
-          <td><span class="value-badge value-badge--{{ row.value_label|lower|replace(' ', '-') }}">{{ row.value_label }}</span></td>
-        </tr>
+  <div class="movement-groups">
+    {% for group in report.moved_groups %}
+    <details class="fight-group" {% if loop.first %}open{% endif %}>
+      <summary class="fight-group__summary">
+        <div class="fight-group__title">
+          <strong>{{ group.fight }}</strong>
+          <span>{{ group.rows|length }} markets</span>
+        </div>
+        <div class="fight-group__meta">
+          <span class="fg-chip">{{ group.move_count }} moved</span>
+          {% if group.largest_delta is number %}<span class="fg-chip">max Δ {{ "%.2f"|format(group.largest_delta) }}</span>{% endif %}
+          {% if group.best_edge is number %}<span class="fg-chip fg-chip--edge">best edge {{ group.best_edge }}%</span>{% endif %}
+        </div>
+      </summary>
+      <div class="fight-group__body">
+        {% for row in group.rows %}
+          {{ row_card(row) }}
         {% endfor %}
-      </tbody>
-    </table>
+      </div>
+    </details>
+    {% endfor %}
+  </div>
+  {% endif %}
+</section>
+
+<section class="section">
+  <div class="section-heading-row">
+    <div>
+      <h2 class="section-heading">Value Holds</h2>
+      <p class="section-blurb">Stable prices that still look playable at the current number.</p>
+    </div>
+  </div>
+  {% if not report.value_hold_groups %}
+  <div class="empty-state movement-empty">
+    <p>No stable value spots are standing out right now.</p>
+  </div>
+  {% else %}
+  <div class="movement-groups">
+    {% for group in report.value_hold_groups %}
+    <details class="fight-group">
+      <summary class="fight-group__summary">
+        <div class="fight-group__title">
+          <strong>{{ group.fight }}</strong>
+          <span>{{ group.rows|length }} markets</span>
+        </div>
+        <div class="fight-group__meta">
+          <span class="fg-chip">{{ group.rows|length }} holds</span>
+          {% if group.best_edge is number %}<span class="fg-chip fg-chip--edge">best edge {{ group.best_edge }}%</span>{% endif %}
+        </div>
+      </summary>
+      <div class="fight-group__body">
+        {% for row in group.rows %}
+          {{ row_card(row) }}
+        {% endfor %}
+      </div>
+    </details>
+    {% endfor %}
+  </div>
+  {% endif %}
+</section>
+
+<section class="section">
+  <div class="section-heading-row">
+    <div>
+      <h2 class="section-heading">Full Fight Archive</h2>
+      <p class="section-blurb">All priced rows, grouped by fight. This replaces the cut-off table.</p>
+    </div>
+  </div>
+  {% if not report.fight_groups %}
+  <div class="empty-state movement-empty">
+    <p>No priced movement archive generated yet.</p>
+  </div>
+  {% else %}
+  <div class="movement-groups">
+    {% for group in report.fight_groups %}
+    <details class="fight-group">
+      <summary class="fight-group__summary">
+        <div class="fight-group__title">
+          <strong>{{ group.fight }}</strong>
+          <span>{{ group.rows|length }} markets</span>
+        </div>
+        <div class="fight-group__meta">
+          <span class="fg-chip">{{ group.move_count }} moved</span>
+          {% if group.best_edge is number %}<span class="fg-chip fg-chip--edge">best edge {{ group.best_edge }}%</span>{% endif %}
+        </div>
+      </summary>
+      <div class="fight-group__body">
+        {% for row in group.rows %}
+          {{ row_card(row) }}
+        {% endfor %}
+      </div>
+    </details>
+    {% endfor %}
   </div>
   {% endif %}
 </section>
@@ -136,9 +198,22 @@
       movementButton.disabled = true;
       movementButton.textContent = 'Running...';
       const res = await fetch('/api/check-movement', { method: 'POST' });
-      if (!res.ok) { movementButton.textContent = 'Error'; return; }
+      if (!res.ok) {
+        movementButton.textContent = 'Error';
+        return;
+      }
       window.location.reload();
     });
+  }
+  // Format ISO timestamp to human-readable
+  var tsEl = document.getElementById('lastRunTs');
+  if (tsEl && tsEl.dataset.iso) {
+    try {
+      var d = new Date(tsEl.dataset.iso);
+      if (!isNaN(d)) {
+        tsEl.textContent = d.toLocaleString('en-US', {month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true});
+      }
+    } catch(e) {}
   }
 </script>
 {% endblock %}
