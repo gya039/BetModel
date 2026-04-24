@@ -26,6 +26,41 @@ app = Flask(
 app.config["TEMPLATES_AUTO_RELOAD"] = True
 
 
+# ── fighter enrichment helpers ────────────────────────────────────────────────
+
+_WC_THRESHOLDS = [
+    (115, "Strawweight"), (125, "Flyweight"), (135, "Bantamweight"),
+    (145, "Featherweight"), (155, "Lightweight"), (170, "Welterweight"),
+    (185, "Middleweight"), (205, "Light Heavyweight"), (265, "Heavyweight"),
+]
+WEIGHT_CLASS_ORDER = [wc for _, wc in _WC_THRESHOLDS] + ["Unknown"]
+
+def _get_weight_class(weight_lbs):
+    try:
+        w = float(weight_lbs or 0)
+    except (ValueError, TypeError):
+        return "Unknown"
+    if w <= 0:
+        return "Unknown"
+    for threshold, name in _WC_THRESHOLDS:
+        if w <= threshold:
+            return name
+    return "Heavyweight"
+
+def _get_exp_tier(fighter):
+    total = (fighter.get("wins") or 0) + (fighter.get("losses") or 0) + (fighter.get("draws") or 0)
+    if total >= 20: return "elite"
+    if total >= 10: return "veteran"
+    if total >= 5:  return "prospect"
+    return "newcomer"
+
+def _enrich_fighters(fighters):
+    for f in fighters:
+        f["weight_class"] = _get_weight_class(f.get("weight_lbs"))
+        f["exp_tier"] = _get_exp_tier(f)
+    return fighters
+
+
 # ── data helpers ──────────────────────────────────────────────────────────────
 
 def _load(path: Path, default):
@@ -102,13 +137,162 @@ def load_staking():
     return plan
 
 
+def _market_rows(fight: dict, predicate):
+    return [row for row in fight.get("markets", []) if predicate(row)]
+
+
+def _top_method_row(fight: dict):
+    method_rows = _market_rows(fight, lambda row: " by " in str(row.get("market", "")))
+    if not method_rows:
+        return None
+    return max(method_rows, key=lambda row: row.get("model_probability") or 0)
+
+
+def _best_total_row(fight: dict):
+    totals = _market_rows(
+        fight,
+        lambda row: str(row.get("market", "")).startswith("Total Rounds ") and row.get("decimal_odds") not in ("", None),
+    )
+    if not totals:
+        return None
+    return max(totals, key=lambda row: row.get("edge") if row.get("edge") is not None else -999)
+
+
+def _method_label(row: dict | None) -> str:
+    if not row:
+        return "Decision / mixed paths"
+    market = str(row.get("market", ""))
+    return market.split(" by ", 1)[-1] if " by " in market else market
+
+
+def _timing_label(fight: dict, method_row: dict | None) -> str:
+    finish = fight.get("finish_probability") or 0
+    decision = fight.get("decision_probability") or 0
+    method = _method_label(method_row)
+    if decision >= 0.58:
+        return "Most likely reaches the cards"
+    if finish >= 0.7 and method == "KO/TKO":
+        return "Early danger window"
+    if finish >= 0.64 and method == "Submission":
+        return "Mid-fight grappling finish live"
+    if finish >= 0.58:
+        return "Inside-the-distance lean"
+    return "Swing rounds after round one"
+
+
+def _verdict_summary(fight: dict) -> dict:
+    method_row = _top_method_row(fight)
+    total_row = _best_total_row(fight)
+    breakdown = fight.get("betting_breakdown", {})
+    side = fight.get("model_side", "Pass")
+    side_prob = round((fight.get("model_side_probability") or 0) * 100)
+    finish = round((fight.get("finish_probability") or 0) * 100)
+    decision = round((fight.get("decision_probability") or 0) * 100)
+    why = breakdown.get("fight_script") or breakdown.get("rationale") or "The model sees cleaner winning paths on this side."
+
+    same_fight = []
+    if total_row:
+        total_label = f"{total_row.get('selection')} {total_row.get('market').replace('Total Rounds ', '')}"
+        if (total_row.get("edge") or 0) >= 3:
+            same_fight.append(f"{side} + {total_label}")
+    if method_row and (method_row.get("model_probability") or 0) >= 0.16:
+        same_fight.append(method_row.get("selection"))
+    if not same_fight:
+        same_fight.append(f"{side} moneyline only")
+
+    return {
+        "winner": side,
+        "winner_probability_pct": side_prob,
+        "method": _method_label(method_row),
+        "method_probability_pct": round((method_row.get("model_probability") or 0) * 100) if method_row else None,
+        "timing": _timing_label(fight, method_row),
+        "finish_probability_pct": finish,
+        "decision_probability_pct": decision,
+        "why": why,
+        "same_fight_builds": same_fight[:2],
+    }
+
+
+def enrich_fight(fight: dict) -> dict:
+    fight["verdict"] = _verdict_summary(fight)
+    return fight
+
+
+def enrich_plan(plan: dict) -> dict:
+    combo_notes = []
+    for acca in plan.get("accumulators", []):
+        if not acca.get("legs"):
+            continue
+        combo_notes.append(
+            {
+                "title": f"{acca['type']} lean",
+                "summary": " + ".join(leg.get("selection", "") for leg in acca["legs"]),
+                "edge": acca.get("combined_edge"),
+            }
+        )
+    plan["combo_notes"] = combo_notes[:3]
+    return plan
+
+
+def _group_movement_rows(rows: list[dict]) -> list[dict]:
+    grouped = {}
+    for row in rows:
+        fight = row.get("fight") or "Unknown Fight"
+        group = grouped.setdefault(
+            fight,
+            {
+                "fight": fight,
+                "rows": [],
+                "move_count": 0,
+                "best_edge": None,
+                "largest_delta": None,
+            },
+        )
+        group["rows"].append(row)
+        if row.get("movement_label") in {"Shortened", "Drifted", "New Market"}:
+            group["move_count"] += 1
+        edge = row.get("edge")
+        if isinstance(edge, (int, float)):
+            if group["best_edge"] is None or edge > group["best_edge"]:
+                group["best_edge"] = edge
+        delta = row.get("decimal_move")
+        if isinstance(delta, (int, float)):
+            abs_delta = abs(delta)
+            if group["largest_delta"] is None or abs_delta > group["largest_delta"]:
+                group["largest_delta"] = abs_delta
+
+    groups = list(grouped.values())
+    groups.sort(
+        key=lambda group: (
+            group["move_count"],
+            group["largest_delta"] if isinstance(group["largest_delta"], (int, float)) else 0,
+            group["best_edge"] if isinstance(group["best_edge"], (int, float)) else -999,
+        ),
+        reverse=True,
+    )
+    return groups
+
+
+def enrich_movement(report: dict) -> dict:
+    report.setdefault("rows", [])
+    report.setdefault("noteworthy", [])
+    report.setdefault("value_holds", [])
+    report.setdefault("moved_rows", report["rows"])
+    report.setdefault("significant_move_count", report.get("noteworthy_count", len(report["noteworthy"])))
+    report.setdefault("value_hold_count", len(report["value_holds"]))
+    report["fight_groups"] = _group_movement_rows(report["rows"])
+    report["moved_groups"] = _group_movement_rows(report["moved_rows"])
+    report["value_hold_groups"] = _group_movement_rows(report["value_holds"])
+    return report
+
+
 # ── routes ────────────────────────────────────────────────────────────────────
 
 @app.route("/")
 def index():
     card, fighters, matchups, _ = load_all()
-    plan = load_staking()
-    betting = load_betting()
+    plan = enrich_plan(load_staking())
+    betting = [enrich_fight(fight) for fight in load_betting()]
     return render_template("index.html",
                            card=card,
                            matchups=matchups,
@@ -120,24 +304,32 @@ def index():
 @app.route("/fighters")
 def fighter_directory():
     _, fighters, _, _ = load_all()
+    _enrich_fighters(fighters)
 
-    q      = request.args.get("q", "").strip().lower()
-    stance = request.args.get("stance", "").strip().lower()
+    q        = request.args.get("q", "").strip().lower()
+    stance   = request.args.get("stance", "").strip().lower()
+    sort_by  = request.args.get("sort", "exp")
 
     filtered = fighters
     if q:
         filtered = [f for f in filtered if q in f.get("name", "").lower()]
     if stance:
-        filtered = [f for f in filtered
-                    if f.get("stance", "").lower() == stance]
+        filtered = [f for f in filtered if f.get("stance", "").lower() == stance]
 
-    all_stances = sorted({f.get("stance", "") for f in fighters
-                          if f.get("stance", "").strip()})
+    if sort_by == "exp":
+        tier_order = {"elite": 0, "veteran": 1, "prospect": 2, "newcomer": 3}
+        filtered = sorted(filtered, key=lambda f: tier_order.get(f.get("exp_tier", "newcomer"), 3))
+    else:
+        wc_idx = {wc: i for i, wc in enumerate(WEIGHT_CLASS_ORDER)}
+        filtered = sorted(filtered, key=lambda f: wc_idx.get(f.get("weight_class", "Unknown"), 99))
+
+    all_stances = sorted({f.get("stance", "") for f in fighters if f.get("stance", "").strip()})
     return render_template("fighters.html",
                            fighters=filtered,
                            query=q,
                            stances=all_stances,
-                           selected_stance=stance)
+                           selected_stance=stance,
+                           sort_by=sort_by)
 
 
 @app.route("/fighter/<fighter_id>")
@@ -162,14 +354,14 @@ def matchup(fa_id: str, fb_id: str):
 @app.route("/betting")
 def betting_overview():
     card, _, _, _ = load_all()
-    fights = load_betting()
+    fights = [enrich_fight(fight) for fight in load_betting()]
     return render_template("betting.html", card=card, fights=fights)
 
 
 @app.route("/betting/<fight_id>")
 def betting_fight(fight_id: str):
     card, _, _, _ = load_all()
-    fights = load_betting()
+    fights = [enrich_fight(fight) for fight in load_betting()]
     fight = next((item for item in fights if item.get("fight_id") == fight_id), None)
     if not fight:
         abort(404)
@@ -179,14 +371,14 @@ def betting_fight(fight_id: str):
 @app.route("/check-movement")
 def check_movement_page():
     card, _, _, _ = load_all()
-    report = load_movement()
+    report = enrich_movement(load_movement())
     return render_template("check_movement.html", card=card, report=report)
 
 
 @app.route("/bankroll")
 def bankroll_page():
     card, _, _, _ = load_all()
-    plan = load_staking()
+    plan = enrich_plan(load_staking())
     return render_template("bankroll.html", card=card, plan=plan)
 
 

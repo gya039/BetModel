@@ -206,6 +206,26 @@
   {% endif %}
 </section>
 
+{% if plan.combo_notes %}
+<section class="landing-section">
+  <div class="section-heading-row">
+    <div>
+      <h2 class="section-heading">Quick Combo Reads</h2>
+      <p class="section-blurb">Fast-glance combined-fight opinions built from the current strongest priced legs.</p>
+    </div>
+  </div>
+  <div class="suggestion-grid">
+    {% for note in plan.combo_notes %}
+    <div class="suggestion-card">
+      <span class="bet-metric__label">{{ note.title }}</span>
+      <strong>{{ note.summary }}</strong>
+      <p>{% if note.edge is number %}Combined edge {{ note.edge }}%.{% else %}Current combo has no calculated edge yet.{% endif %}</p>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
 <section class="landing-section history-shell">
   <div class="section-heading-row">
     <div>

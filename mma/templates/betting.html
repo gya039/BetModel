@@ -88,6 +88,16 @@
       {% endif %}
 
       <div class="bcv2-angles">
+        {% if fight.verdict %}
+        <div class="bcv2-angle-row">
+          <span>Verdict</span>
+          <strong>{{ fight.verdict.winner }} by {{ fight.verdict.method }}{% if fight.verdict.method_probability_pct %} · {{ fight.verdict.method_probability_pct }}%{% endif %}</strong>
+        </div>
+        <div class="bcv2-angle-row">
+          <span>When</span>
+          <strong>{{ fight.verdict.timing }}</strong>
+        </div>
+        {% endif %}
         {% if best %}
         <div class="bcv2-angle-row">
           <span>Play</span>

@@ -1,92 +1,171 @@
 {% extends "base.html" %}
 {% block title %}Octagon IQ — Fighter Directory{% endblock %}
 
+{# ── Fighter card macro ──────────────────────────────────────────────────── #}
+{% macro fighter_card(f) %}
+<a href="/fighter/{{ f.fighter_id }}" class="fighter-card-v2 exp-tier--{{ f.exp_tier }}">
+
+  <div class="fcard-avatar">
+    {% if f.get('photo') %}
+    <img src="{{ f.photo }}" alt="{{ f.name }}" loading="lazy">
+    {% else %}
+    <span>{{ f.name.split()[0][0] }}{{ f.name.split()[-1][0] if f.name.split()|length > 1 else '' }}</span>
+    {% endif %}
+
+    {# Experience badge overlay #}
+    <div class="exp-badge exp-badge--{{ f.exp_tier }}">
+      {% if f.exp_tier == 'elite' %}★ ELITE
+      {% elif f.exp_tier == 'veteran' %}VETERAN
+      {% elif f.exp_tier == 'prospect' %}PROSPECT
+      {% else %}NEWCOMER{% endif %}
+    </div>
+  </div>
+
+  <div class="fcard-body">
+    <div class="fcard-name">{{ f.name }}</div>
+    {% if f.get('nickname') %}<div class="fcard-nick">"{{ f.nickname }}"</div>{% endif %}
+
+    <div class="fcard-record">
+      <span class="fcard-w">{{ f.get('wins', 0) }}</span>
+      <span class="fcard-sep">—</span>
+      <span class="fcard-l">{{ f.get('losses', 0) }}</span>
+      {% if f.get('draws', 0) %}<span class="fcard-sep">—</span><span class="fcard-d">{{ f.draws }}D</span>{% endif %}
+    </div>
+
+    <div class="fcard-tags">
+      {% if f.get('weight_class') and f.weight_class != 'Unknown' %}
+      <span class="fcard-tag fcard-tag--wc">{{ f.weight_class }}</span>
+      {% endif %}
+      {% if f.get('stance') %}<span class="fcard-tag">{{ f.stance }}</span>{% endif %}
+      {% if f.get('reach_raw') %}<span class="fcard-tag">{{ f.reach_raw }}</span>{% endif %}
+    </div>
+  </div>
+
+  <div class="fcard-stats">
+    <div class="fcard-stat">
+      <span class="fcard-stat__val">{{ f.slpm if f.get('slpm') else '—' }}</span>
+      <span class="fcard-stat__lbl">Landed/min</span>
+    </div>
+    <div class="fcard-stat">
+      <span class="fcard-stat__val">{{ "%.0f"|format(f.str_acc * 100) ~ '%' if f.get('str_acc') else '—' }}</span>
+      <span class="fcard-stat__lbl">Accuracy</span>
+    </div>
+    <div class="fcard-stat">
+      <span class="fcard-stat__val">{{ f.td_avg if f.get('td_avg') else '—' }}</span>
+      <span class="fcard-stat__lbl">TD/15m</span>
+    </div>
+    <div class="fcard-stat fcard-stat--finish">
+      <span class="fcard-stat__val">{{ f.finish_rate ~ '%' if f.get('finish_rate') else '—' }}</span>
+      <span class="fcard-stat__lbl">Finish%</span>
+    </div>
+  </div>
+
+  <button class="compare-btn" data-id="{{ f.fighter_id }}" data-name="{{ f.name }}" title="Compare fighter">⚔</button>
+
+</a>
+{% endmacro %}
+
 {% block content %}
 
 <section class="page-header page-header--command page-header--fighters">
   <h1 class="page-title">Fighter Directory</h1>
-  <p class="page-sub">{{ fighters|length }} fighters on the current card, built for quick scouting reads.</p>
+  <p class="page-sub">{{ fighters|length }} fighters on the current card — sorted by weight class</p>
 </section>
 
 <section class="section fighter-directory-shell">
-  <form class="filter-bar" method="get" action="/fighters">
-    <input class="filter-input" type="text" name="q" placeholder="Search by name…" value="{{ query }}">
-    <select class="filter-select" name="stance" onchange="this.form.submit()">
-      <option value="">All Stances</option>
-      {% for s in stances %}
-      <option value="{{ s.lower() }}" {% if selected_stance == s.lower() %}selected{% endif %}>{{ s }}</option>
-      {% endfor %}
-    </select>
-    <button class="btn btn--primary" type="submit">Filter</button>
-    {% if query or selected_stance %}<a href="/fighters" class="btn btn--ghost">Clear</a>{% endif %}
-  </form>
+  <div class="fd-toolbar">
+    <form class="filter-bar" method="get" action="/fighters">
+      <input class="filter-input" type="text" name="q" placeholder="Search by name…" value="{{ query }}">
+      <select class="filter-select" name="stance" onchange="this.form.submit()">
+        <option value="">All Stances</option>
+        {% for s in stances %}
+        <option value="{{ s.lower() }}" {% if selected_stance == s.lower() %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select>
+      <button class="btn btn--primary" type="submit">Filter</button>
+      {% if query or selected_stance %}<a href="/fighters" class="btn btn--ghost">Clear</a>{% endif %}
+    </form>
+
+    <div class="fd-sort-pills">
+      <a href="?sort=exp{% if query %}&q={{ query }}{% endif %}{% if selected_stance %}&stance={{ selected_stance }}{% endif %}"
+         class="fd-sort-pill {% if sort_by == 'exp' %}active{% endif %}">By Experience</a>
+      <a href="?sort=weight_class{% if query %}&q={{ query }}{% endif %}{% if selected_stance %}&stance={{ selected_stance }}{% endif %}"
+         class="fd-sort-pill {% if sort_by != 'exp' %}active{% endif %}">By Weight Class</a>
+    </div>
+  </div>
 
   {% if not fighters %}
   <div class="empty-state">
     <p>No fighters found{% if query %} matching "<strong>{{ query }}</strong>"{% endif %}.</p>
   </div>
-  {% else %}
+
+  {% elif sort_by == 'exp' %}
+  {# Flat grid sorted by experience tier #}
   <div class="fighters-grid-v2">
     {% for f in fighters %}
-    <a href="/fighter/{{ f.fighter_id }}" class="fighter-card-v2">
-
-      <div class="fcard-avatar">
-        {% if f.get('photo') %}
-        <img src="{{ f.photo }}" alt="{{ f.name }}" loading="lazy">
-        {% else %}
-        <span>{{ f.name.split()[0][0] }}{{ f.name.split()[-1][0] if f.name.split()|length > 1 else '' }}</span>
-        {% endif %}
-      </div>
-
-      <div class="fcard-body">
-        <div class="fcard-name">{{ f.name }}</div>
-        {% if f.get('nickname') %}<div class="fcard-nick">"{{ f.nickname }}"</div>{% endif %}
-
-        <div class="fcard-record">
-          <span class="fcard-w">{{ f.get('wins', 0) }}</span>
-          <span class="fcard-sep">—</span>
-          <span class="fcard-l">{{ f.get('losses', 0) }}</span>
-          {% if f.get('draws', 0) %}<span class="fcard-sep">—</span><span class="fcard-d">{{ f.draws }}D</span>{% endif %}
-        </div>
-
-        <div class="fcard-tags">
-          {% if f.get('stance') %}<span class="fcard-tag">{{ f.stance }}</span>{% endif %}
-          {% if f.get('height_raw') %}<span class="fcard-tag">{{ f.height_raw }}</span>{% endif %}
-          {% if f.get('reach_raw') %}<span class="fcard-tag">{{ f.reach_raw }} reach</span>{% endif %}
-        </div>
-      </div>
-
-      <div class="fcard-stats">
-        {% if f.get('slpm') %}
-        <div class="fcard-stat">
-          <span class="fcard-stat__val">{{ f.slpm }}</span>
-          <span class="fcard-stat__lbl" title="Significant strikes landed per minute">Landed/min</span>
-        </div>
-        {% endif %}
-        {% if f.get('str_acc') %}
-        <div class="fcard-stat">
-          <span class="fcard-stat__val">{{ "%.0f"|format(f.str_acc * 100) }}%</span>
-          <span class="fcard-stat__lbl" title="Significant striking accuracy">Accuracy</span>
-        </div>
-        {% endif %}
-        {% if f.get('td_avg') %}
-        <div class="fcard-stat">
-          <span class="fcard-stat__val">{{ f.td_avg }}</span>
-          <span class="fcard-stat__lbl" title="Takedowns landed per 15 minutes">TD/15m</span>
-        </div>
-        {% endif %}
-        {% if f.get('finish_rate') %}
-        <div class="fcard-stat fcard-stat--finish">
-          <span class="fcard-stat__val">{{ f.finish_rate }}%</span>
-          <span class="fcard-stat__lbl">Finish</span>
-        </div>
-        {% endif %}
-      </div>
-
-    </a>
+    {{ fighter_card(f) }}
     {% endfor %}
   </div>
+
+  {% else %}
+  {# Grouped by weight class #}
+  {% for wc, wc_fighters in fighters | groupby('weight_class') %}
+  <div class="wc-group">
+    <div class="wc-group__header">
+      <span class="wc-group__label">{{ wc }}</span>
+      <span class="wc-group__count">{{ wc_fighters | list | length }} fighters</span>
+    </div>
+    <div class="fighters-grid-v2">
+      {% for f in wc_fighters %}
+      {{ fighter_card(f) }}
+      {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
   {% endif %}
+
 </section>
+
+{% block scripts %}
+<script>
+(function(){
+  var selId = null, selName = null;
+  var banner = null;
+
+  function mkBanner(name) {
+    var b = document.createElement('div');
+    b.id = 'cmp-banner';
+    b.innerHTML = '<span>⚔ <strong>' + name + '</strong> selected — tap another fighter to compare</span>' +
+                  '<button onclick="clearCmp()">✕ Cancel</button>';
+    document.body.appendChild(b);
+    return b;
+  }
+
+  window.clearCmp = function() {
+    selId = null; selName = null;
+    document.querySelectorAll('.compare-btn.cmp-sel').forEach(function(b){ b.classList.remove('cmp-sel'); });
+    document.querySelectorAll('.fighter-card-v2.cmp-sel').forEach(function(c){ c.classList.remove('cmp-sel'); });
+    if (banner) { banner.remove(); banner = null; }
+  };
+
+  document.querySelectorAll('.compare-btn').forEach(function(btn) {
+    btn.addEventListener('click', function(e) {
+      e.preventDefault(); e.stopPropagation();
+      var id = btn.dataset.id, name = btn.dataset.name;
+      if (!selId) {
+        selId = id; selName = name;
+        btn.classList.add('cmp-sel');
+        btn.closest('.fighter-card-v2').classList.add('cmp-sel');
+        banner = mkBanner(name);
+      } else if (selId === id) {
+        clearCmp();
+      } else {
+        window.location.href = '/matchup/' + selId + '/' + id;
+      }
+    });
+  });
+})();
+</script>
+{% endblock %}
 
 {% endblock %}

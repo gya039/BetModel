@@ -20,6 +20,7 @@
 {% set early_prelim_card = matchups[main_count + prelim_count:] %}
 {% set placed_bets = singles + accas %}
 {% set bet_count = placed_bets|length %}
+{% set event_title = (card.get('event_name') or 'UFC Fight Night: Sterling vs Zalal').replace('vs.', 'vs') %}
 {% set returns = namespace(total=0) %}
 {% for pick in singles %}
   {% set returns.total = returns.total + (pick.potential_return or 0) %}
@@ -27,23 +28,90 @@
 {% for acca in accas %}
   {% set returns.total = returns.total + (acca.potential_return or 0) %}
 {% endfor %}
+<!-- Fight Header -->
+<section
+  class="fight-header"
+  id="fightHeader"
+  data-event-date="{{ card.get('event_date','') }}"
+  data-event-title="{{ event_title }}"
+>
+  <div class="fight-header__frame">
+    <div class="fight-header__panel">
+      <span class="fight-header__panel-light fight-header__panel-light--lt" aria-hidden="true"></span>
+      <span class="fight-header__panel-light fight-header__panel-light--rt" aria-hidden="true"></span>
+      <span class="fight-header__panel-light fight-header__panel-light--lb" aria-hidden="true"></span>
+      <span class="fight-header__panel-light fight-header__panel-light--rb" aria-hidden="true"></span>
+      <span class="fight-header__panel-trace fight-header__panel-trace--l" aria-hidden="true"></span>
+      <span class="fight-header__panel-trace fight-header__panel-trace--r" aria-hidden="true"></span>
+      <span class="fight-header__oct fight-header__oct--l" aria-hidden="true"></span>
+      <span class="fight-header__oct fight-header__oct--r" aria-hidden="true"></span>
 
-<div class="ticker-band ticker-band--top" aria-label="Live event ticker">
-  <div class="ticker-track">
-    <span>{{ card.get('event_name', 'Upcoming UFC Card') }}</span>
-    <span>⬡</span>
-    <span>{{ total_bouts }} fights on the card</span>
-    <span>⬡</span>
-    <span>{{ card.get('event_name', 'Upcoming UFC Card') }}</span>
-    <span>⬡</span>
-    <span>{{ total_bouts }} fights on the card</span>
-    <span>⬡</span>
-    <span>{{ card.get('event_name', 'Upcoming UFC Card') }}</span>
-    <span>⬡</span>
-    <span>{{ total_bouts }} fights on the card</span>
-    <span>⬡</span>
+      <div class="fight-header__copy">
+        <p class="fight-header__kicker">Main Event</p>
+        <h2 class="fight-header__title" id="fightHeaderTitle">UFC FIGHT NIGHT: STERLING VS ZALAL</h2>
+      </div>
+
+      <div class="fight-header__countdown-shell" id="fightCountdown" aria-label="Live event countdown">
+        <span class="fight-header__countdown-line fight-header__countdown-line--l" aria-hidden="true"></span>
+        <div class="fight-header__countdown-segment">
+          <div class="fight-header__countdown-main">
+            <span class="fight-header__countdown-value" id="fnDays">01</span>
+            <span class="fight-header__countdown-suffix">D</span>
+          </div>
+          <span class="fight-header__countdown-label">Days</span>
+        </div>
+        <span class="fight-header__countdown-divider">:</span>
+        <div class="fight-header__countdown-segment">
+          <div class="fight-header__countdown-main">
+            <span class="fight-header__countdown-value" id="fnHours">21</span>
+            <span class="fight-header__countdown-suffix">H</span>
+          </div>
+          <span class="fight-header__countdown-label">Hours</span>
+        </div>
+        <span class="fight-header__countdown-divider">:</span>
+        <div class="fight-header__countdown-segment">
+          <div class="fight-header__countdown-main">
+            <span class="fight-header__countdown-value" id="fnMins">00</span>
+            <span class="fight-header__countdown-suffix">M</span>
+          </div>
+          <span class="fight-header__countdown-label">Minutes</span>
+        </div>
+        <span class="fight-header__countdown-line fight-header__countdown-line--r" aria-hidden="true"></span>
+      </div>
+
+      <div class="fight-header__live" id="fnLive" hidden>
+        <span class="fight-header__live-dot"></span>
+        <span>Live Now</span>
+      </div>
+    </div>
+
+    <div class="fight-header__ticker" aria-label="Fight card ticker">
+      <span class="fight-header__ticker-edge fight-header__ticker-edge--l" aria-hidden="true"></span>
+      <span class="fight-header__ticker-edge fight-header__ticker-edge--r" aria-hidden="true"></span>
+      <span class="fight-header__ticker-oct" aria-hidden="true"></span>
+      <div class="fight-header__ticker-marquee">
+        <div class="fight-header__ticker-track">
+          <span>Fights on the card</span>
+          <span class="fight-header__ticker-dot"></span>
+          <span>{{ event_title }}</span>
+          <span class="fight-header__ticker-dot"></span>
+          <span>{{ total_bouts }} fights</span>
+          <span class="fight-header__ticker-dot"></span>
+          <span>{{ card.get('event_location','Las Vegas, NV') }}</span>
+        </div>
+        <div class="fight-header__ticker-track" aria-hidden="true">
+          <span>Fights on the card</span>
+          <span class="fight-header__ticker-dot"></span>
+          <span>{{ event_title }}</span>
+          <span class="fight-header__ticker-dot"></span>
+          <span>{{ total_bouts }} fights</span>
+          <span class="fight-header__ticker-dot"></span>
+          <span>{{ card.get('event_location','Las Vegas, NV') }}</span>
+        </div>
+      </div>
+    </div>
   </div>
-</div>
+</section>
 
 <section class="command-hero">
   <img class="hero-bg" src="{{ url_for('static', filename='assets/octagon-arena.png') }}" alt="" aria-hidden="true">
@@ -366,4 +434,64 @@
   <a href="/betting" class="btn btn--neon">Enter the Board</a>
 </section>
 
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function(){
+  var months = {January:0,February:1,March:2,April:3,May:4,June:5,July:6,August:7,September:8,October:9,November:10,December:11};
+  var banner = document.getElementById('fightHeader');
+  if (!banner) return;
+  var eventDate = banner.dataset.eventDate;
+  var m = eventDate.match(/(\w+)\s+(\d+),\s+(\d+)/);
+  if (!m) return;
+  // UFC Fight Night cards kick off ~7 PM ET = 23:00 UTC in April
+  var eventStart = new Date(Date.UTC(+m[3], months[m[1]], +m[2], 23, 0, 0));
+
+  var elD     = document.getElementById('fnDays');
+  var elH     = document.getElementById('fnHours');
+  var elM     = document.getElementById('fnMins');
+  var elTimer = document.getElementById('fightCountdown');
+  var elLive  = document.getElementById('fnLive');
+
+  function pad(n){ return (n < 10 ? '0' : '') + n; }
+
+  function tick(){
+    var now     = Date.now();
+    var diff    = eventStart - now;
+    var elapsed = now - eventStart;
+    if (diff > 0) {
+      var d  = Math.floor(diff / 86400000);
+      var h  = Math.floor((diff % 86400000) / 3600000);
+      var mn = Math.floor((diff % 3600000)  / 60000);
+      elD.textContent = pad(d);
+      elH.textContent = pad(h);
+      elM.textContent = pad(mn);
+      elTimer.hidden = false;
+      elLive.hidden = true;
+      banner.classList.remove('fight-header--live');
+      if (d === 0 && h < 6) {
+        banner.classList.add('fight-header--soon');
+      } else {
+        banner.classList.remove('fight-header--soon');
+      }
+    } else if (elapsed < 21600000) {
+      elTimer.hidden = true;
+      elLive.hidden = false;
+      banner.classList.remove('fight-header--soon');
+      banner.classList.add('fight-header--live');
+    } else {
+      banner.classList.remove('fight-header--soon');
+      banner.classList.remove('fight-header--live');
+      elTimer.hidden = false;
+      elLive.hidden = true;
+      elD.textContent = '00';
+      elH.textContent = '00';
+      elM.textContent = '00';
+    }
+  }
+  tick();
+  setInterval(tick, 1000);
+})();
+</script>
 {% endblock %}

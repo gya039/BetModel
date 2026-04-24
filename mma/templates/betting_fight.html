@@ -37,6 +37,33 @@
 </section>
 
 <section class="section">
+  <h2 class="section-heading">Octagon IQ Verdict</h2>
+  <div class="suggestion-grid">
+    <div class="suggestion-card">
+      <span class="bet-metric__label">Winner</span>
+      <strong>{{ fight.verdict.winner }}</strong>
+      <p>{{ fight.verdict.winner_probability_pct }}% model win probability.</p>
+    </div>
+    <div class="suggestion-card">
+      <span class="bet-metric__label">How</span>
+      <strong>{{ fight.verdict.method }}</strong>
+      <p>
+        {% if fight.verdict.method_probability_pct %}
+        {{ fight.verdict.method_probability_pct }}% model share for the clearest finishing or scoring path.
+        {% else %}
+        Mixed method profile with no single path clearly dominant.
+        {% endif %}
+      </p>
+    </div>
+    <div class="suggestion-card">
+      <span class="bet-metric__label">When</span>
+      <strong>{{ fight.verdict.timing }}</strong>
+      <p>Finish {{ fight.verdict.finish_probability_pct }}% / Decision {{ fight.verdict.decision_probability_pct }}%.</p>
+    </div>
+  </div>
+</section>
+
+<section class="section">
   <h2 class="section-heading">Betting Suggestions</h2>
   <div class="suggestion-grid">
     <div class="suggestion-card">
@@ -65,6 +92,19 @@
       <p>No available sportsbook price clears the value threshold. Keep the model lean, but wait for a better number.</p>
       {% endif %}
     </div>
+  </div>
+</section>
+
+<section class="section">
+  <h2 class="section-heading">Builder Ideas</h2>
+  <div class="suggestion-grid">
+    {% for idea in fight.verdict.same_fight_builds %}
+    <div class="suggestion-card">
+      <span class="bet-metric__label">Lean {{ loop.index }}</span>
+      <strong>{{ idea }}</strong>
+      <p>{{ fight.verdict.why }}</p>
+    </div>
+    {% endfor %}
   </div>
 </section>
 
