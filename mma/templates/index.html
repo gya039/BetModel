@@ -21,6 +21,17 @@
 {% set placed_bets = singles + accas %}
 {% set bet_count = placed_bets|length %}
 {% set event_title = (card.get('event_name') or 'UFC Fight Night: Sterling vs Zalal').replace('vs.', 'vs') %}
+{% set main_event = matchups[0] if matchups else none %}
+{% set left_fighter = main_event.fighter_a if main_event else none %}
+{% set right_fighter = main_event.fighter_b if main_event else none %}
+{% set left_lookup = (fighters | selectattr('fighter_id', 'equalto', left_fighter.get('fighter_id')) | list | first) if left_fighter else none %}
+{% set right_lookup = (fighters | selectattr('fighter_id', 'equalto', right_fighter.get('fighter_id')) | list | first) if right_fighter else none %}
+{% set left_fighter_photo = left_fighter.get('photo') if left_fighter and left_fighter.get('photo') else (left_lookup.get('photo') if left_lookup and left_lookup.get('photo') else none) %}
+{% set right_fighter_photo = right_fighter.get('photo') if right_fighter and right_fighter.get('photo') else (right_lookup.get('photo') if right_lookup and right_lookup.get('photo') else none) %}
+{% set event_location = card.get('event_location', 'Las Vegas, Nevada, USA') %}
+{% set featured_weight_class = main_event.weight_class if main_event else 'Main Event' %}
+{% set left_record = ((left_fighter.get('wins', '?') ~ '-' ~ left_fighter.get('losses', '?')) ~ ('-' ~ left_fighter.get('draws', 0) if left_fighter and left_fighter.get('draws') else '')) if left_fighter else '' %}
+{% set right_record = ((right_fighter.get('wins', '?') ~ '-' ~ right_fighter.get('losses', '?')) ~ ('-' ~ right_fighter.get('draws', 0) if right_fighter and right_fighter.get('draws') else '')) if right_fighter else '' %}
 {% set returns = namespace(total=0) %}
 {% for pick in singles %}
   {% set returns.total = returns.total + (pick.potential_return or 0) %}
@@ -28,88 +39,91 @@
 {% for acca in accas %}
   {% set returns.total = returns.total + (acca.potential_return or 0) %}
 {% endfor %}
-<!-- Fight Header -->
-<section
-  class="fight-header"
-  id="fightHeader"
-  data-event-date="{{ card.get('event_date','') }}"
-  data-event-title="{{ event_title }}"
->
-  <div class="fight-header__frame">
-    <div class="fight-header__panel">
-      <span class="fight-header__panel-light fight-header__panel-light--lt" aria-hidden="true"></span>
-      <span class="fight-header__panel-light fight-header__panel-light--rt" aria-hidden="true"></span>
-      <span class="fight-header__panel-light fight-header__panel-light--lb" aria-hidden="true"></span>
-      <span class="fight-header__panel-light fight-header__panel-light--rb" aria-hidden="true"></span>
-      <span class="fight-header__panel-trace fight-header__panel-trace--l" aria-hidden="true"></span>
-      <span class="fight-header__panel-trace fight-header__panel-trace--r" aria-hidden="true"></span>
-      <span class="fight-header__oct fight-header__oct--l" aria-hidden="true"></span>
-      <span class="fight-header__oct fight-header__oct--r" aria-hidden="true"></span>
 
-      <div class="fight-header__copy">
-        <p class="fight-header__kicker">Main Event</p>
-        <h2 class="fight-header__title" id="fightHeaderTitle">UFC FIGHT NIGHT: STERLING VS ZALAL</h2>
+<section class="fight-header-banner" id="fightHeader" data-event-date="{{ card.get('event_date', 'April 25, 2026') }}">
+  <div class="fight-header-banner__shell">
+    <div class="fight-header-banner__bg" aria-hidden="true"></div>
+    <div class="fight-header-banner__mesh" aria-hidden="true"></div>
+    <div class="fight-header-banner__inner banner-content">
+      <div class="fight-header-banner__side fight-header-banner__side--left" aria-hidden="true">
+        <div class="fight-header-banner__panel fight-header-banner__panel--rear"></div>
+        <div class="fight-header-banner__panel fight-header-banner__panel--mid"></div>
+        <div class="fight-header-banner__panel fight-header-banner__panel--front"></div>
+        <div class="fight-header-banner__edge"></div>
+        {% if left_fighter %}
+        <div class="hero-fighter-card hero-fighter-card-left">
+          {% if left_fighter_photo %}
+            <img src="{{ left_fighter_photo }}" alt="{{ left_fighter.get('name', 'Left fighter') }}">
+          {% endif %}
+          <div class="hero-fighter-info">
+            <h3>{{ left_fighter.get('name', 'TBA') }}</h3>
+            <p>{{ left_record }}</p>
+            {% if left_fighter.get('odds') %}
+            <span>{{ left_fighter.get('odds') }}</span>
+            {% endif %}
+          </div>
+        </div>
+        {% endif %}
       </div>
 
-      <div class="fight-header__countdown-shell" id="fightCountdown" aria-label="Live event countdown">
-        <span class="fight-header__countdown-line fight-header__countdown-line--l" aria-hidden="true"></span>
-        <div class="fight-header__countdown-segment">
-          <div class="fight-header__countdown-main">
-            <span class="fight-header__countdown-value" id="fnDays">01</span>
-            <span class="fight-header__countdown-suffix">D</span>
-          </div>
-          <span class="fight-header__countdown-label">Days</span>
+      <div class="fight-header-banner__center">
+        <div class="fight-header-banner__brand">UFC</div>
+        <div class="fight-header-banner__timer" id="fightCountdown" aria-label="Countdown to event">
+          <span id="fnDays">00</span>
+          <span>Days</span>
+          <em></em>
+          <span id="fnHours">00</span>
+          <span>Hrs</span>
+          <em></em>
+          <span id="fnMins">00</span>
+          <span>Min</span>
         </div>
-        <span class="fight-header__countdown-divider">:</span>
-        <div class="fight-header__countdown-segment">
-          <div class="fight-header__countdown-main">
-            <span class="fight-header__countdown-value" id="fnHours">21</span>
-            <span class="fight-header__countdown-suffix">H</span>
-          </div>
-          <span class="fight-header__countdown-label">Hours</span>
+        <div class="fight-header-banner__live" id="fnLive" hidden>Live Now</div>
+        <div class="fight-header-banner__title-lockup">
+          <span class="fight-header-banner__title-kicker">UFC</span>
+          <h2>Fight <span>Night</span></h2>
         </div>
-        <span class="fight-header__countdown-divider">:</span>
-        <div class="fight-header__countdown-segment">
-          <div class="fight-header__countdown-main">
-            <span class="fight-header__countdown-value" id="fnMins">00</span>
-            <span class="fight-header__countdown-suffix">M</span>
-          </div>
-          <span class="fight-header__countdown-label">Minutes</span>
+        <div class="fight-header-banner__location">
+          <span>{{ featured_weight_class }}</span>
+          <strong>{{ event_location }}</strong>
         </div>
-        <span class="fight-header__countdown-line fight-header__countdown-line--r" aria-hidden="true"></span>
       </div>
 
-      <div class="fight-header__live" id="fnLive" hidden>
-        <span class="fight-header__live-dot"></span>
-        <span>Live Now</span>
+      <div class="fight-header-banner__side fight-header-banner__side--right" aria-hidden="true">
+        <div class="fight-header-banner__panel fight-header-banner__panel--rear"></div>
+        <div class="fight-header-banner__panel fight-header-banner__panel--mid"></div>
+        <div class="fight-header-banner__panel fight-header-banner__panel--front"></div>
+        <div class="fight-header-banner__edge"></div>
+        {% if right_fighter %}
+        <div class="hero-fighter-card hero-fighter-card-right">
+          {% if right_fighter_photo %}
+            <img src="{{ right_fighter_photo }}" alt="{{ right_fighter.get('name', 'Right fighter') }}">
+          {% endif %}
+          <div class="hero-fighter-info">
+            <h3>{{ right_fighter.get('name', 'TBA') }}</h3>
+            <p>{{ right_record }}</p>
+            {% if right_fighter.get('odds') %}
+            <span>{{ right_fighter.get('odds') }}</span>
+            {% endif %}
+          </div>
+        </div>
+        {% endif %}
       </div>
     </div>
+  </div>
 
-    <div class="fight-header__ticker" aria-label="Fight card ticker">
-      <span class="fight-header__ticker-edge fight-header__ticker-edge--l" aria-hidden="true"></span>
-      <span class="fight-header__ticker-edge fight-header__ticker-edge--r" aria-hidden="true"></span>
-      <span class="fight-header__ticker-oct" aria-hidden="true"></span>
-      <div class="fight-header__ticker-marquee">
-        <div class="fight-header__ticker-track">
-          <span>Fights on the card</span>
-          <span class="fight-header__ticker-dot"></span>
-          <span>{{ event_title }}</span>
-          <span class="fight-header__ticker-dot"></span>
-          <span>{{ total_bouts }} fights</span>
-          <span class="fight-header__ticker-dot"></span>
-          <span>{{ card.get('event_location','Las Vegas, NV') }}</span>
-        </div>
-        <div class="fight-header__ticker-track" aria-hidden="true">
-          <span>Fights on the card</span>
-          <span class="fight-header__ticker-dot"></span>
-          <span>{{ event_title }}</span>
-          <span class="fight-header__ticker-dot"></span>
-          <span>{{ total_bouts }} fights</span>
-          <span class="fight-header__ticker-dot"></span>
-          <span>{{ card.get('event_location','Las Vegas, NV') }}</span>
-        </div>
-      </div>
-    </div>
+  <div class="fight-header-banner__ticker">
+    <span>{{ event_title }}</span>
+    <em></em>
+    <span>{{ total_bouts }} fights</span>
+    <em></em>
+    <span>{{ event_location }}</span>
+    <em></em>
+    {% if left_fighter and right_fighter %}
+    <span>{{ left_fighter.name }} vs {{ right_fighter.name }}</span>
+    {% else %}
+    <span>Fight card loaded</span>
+    {% endif %}
   </div>
 </section>
 
