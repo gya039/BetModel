@@ -88,6 +88,14 @@ def load_all():
             f["photo"] = photos[fid]
 
     lookup = {f["fighter_id"]: f for f in fighters if f.get("fighter_id")}
+    for matchup in matchups:
+        for corner_key in ("fighter_a", "fighter_b"):
+            fighter = matchup.get(corner_key) or {}
+            fid = fighter.get("fighter_id", "")
+            if fid and fid in profiles:
+                fighter["profile"] = profiles[fid]
+            if fid and fid in photos:
+                fighter["photo"] = photos[fid]
     return card, fighters, matchups, lookup
 
 
