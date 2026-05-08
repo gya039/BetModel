@@ -93,9 +93,16 @@ def make_bet_id(event_date: str, fight: str, market: str, selection: str, odds) 
 
 # ── Schema ─────────────────────────────────────────────────────────────────────
 
+SCHEMA_VERSION = 1
+
 _SCHEMA = """
 PRAGMA journal_mode=WAL;
 PRAGMA foreign_keys=ON;
+
+CREATE TABLE IF NOT EXISTS schema_version (
+    version    INTEGER NOT NULL,
+    applied_at TEXT NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS bets (
     id          TEXT PRIMARY KEY,
@@ -136,6 +143,7 @@ CREATE TABLE IF NOT EXISTS migration_quarantine (
 );
 
 CREATE INDEX IF NOT EXISTS idx_ledger_created_at ON ledger_entries(created_at);
+CREATE INDEX IF NOT EXISTS idx_ledger_bet_id     ON ledger_entries(bet_id);
 CREATE INDEX IF NOT EXISTS idx_bets_status       ON bets(status);
 CREATE INDEX IF NOT EXISTS idx_bets_event_date   ON bets(event_date);
 """
@@ -169,10 +177,34 @@ def _tx() -> Iterator[sqlite3.Connection]:
 
 
 def init_db() -> None:
-    """Initialise schema. Safe to call multiple times (all CREATE IF NOT EXISTS)."""
+    """Initialise schema and stamp schema_version. Safe to call multiple times."""
     conn = _connect()
     try:
+        # executescript() auto-commits; no transaction is open afterwards
         conn.executescript(_SCHEMA)
+        row = conn.execute(
+            "SELECT version FROM schema_version ORDER BY version DESC LIMIT 1"
+        ).fetchone()
+        if not row:
+            conn.execute("BEGIN")
+            conn.execute(
+                "INSERT INTO schema_version (version, applied_at) VALUES (?, ?)",
+                (SCHEMA_VERSION, _utcnow()),
+            )
+            conn.execute("COMMIT")
+    finally:
+        conn.close()
+
+
+def get_schema_version() -> int:
+    """Return the current schema version recorded in the DB, or 0 if absent."""
+    init_db()
+    conn = _connect()
+    try:
+        row = conn.execute(
+            "SELECT version FROM schema_version ORDER BY version DESC LIMIT 1"
+        ).fetchone()
+        return row["version"] if row else 0
     finally:
         conn.close()
 
@@ -219,6 +251,9 @@ def place_bet(
     bet_id   = make_bet_id(event_date, fight, market, selection, odds_d)
     now      = _utcnow()
 
+    if stake_d <= Decimal("0"):
+        raise ValueError(f"Stake must be positive, got: {stake_d}")
+
     with _tx() as conn:
         if conn.execute("SELECT id FROM bets WHERE id = ?", (bet_id,)).fetchone():
             raise ValueError(
@@ -227,6 +262,11 @@ def place_bet(
 
         bankroll_before = current_bankroll()
         bankroll_after  = money(bankroll_before - stake_d)
+
+        if bankroll_after < Decimal("0"):
+            raise ValueError(
+                f"Insufficient bankroll: EUR {bankroll_before} < stake EUR {stake_d}"
+            )
 
         conn.execute(
             """INSERT INTO bets
@@ -325,30 +365,59 @@ def settle_bet(bet_id: str, result: str, notes: str = "") -> Decimal:
 
 # ── Migration ──────────────────────────────────────────────────────────────────
 
-def migrate_from_csv(csv_path: Path) -> dict[str, int]:
+def _snapshot_csv(csv_path: Path) -> str:
+    """
+    Archive csv_path to <csv_path>.bak and write a <csv_path>.sha256 checksum file.
+    Returns the hex digest. Called once before the first real migration.
+    Skipped if a .bak already exists (migration already snapshotted).
+    """
+    import hashlib as _hl
+    import shutil
+
+    bak_path = csv_path.with_suffix(csv_path.suffix + ".bak")
+    sha_path = csv_path.with_suffix(csv_path.suffix + ".sha256")
+
+    if bak_path.exists():
+        digest = sha_path.read_text(encoding="utf-8").strip() if sha_path.exists() else ""
+        log.debug("CSV snapshot already exists: %s", bak_path.name)
+        return digest
+
+    raw = csv_path.read_bytes()
+    digest = _hl.sha256(raw).hexdigest()
+    shutil.copy2(csv_path, bak_path)
+    sha_path.write_text(digest + "\n", encoding="utf-8")
+    log.info("CSV snapshot saved: %s  sha256=%s…", bak_path.name, digest[:16])
+    return digest
+
+
+def migrate_from_csv(csv_path: Path) -> dict:
     """
     Import historical bet_history.csv into the ledger.
+
+    Before processing, archives the CSV as <name>.bak and writes a .sha256
+    checksum — giving permanent forensic provenance for the migration boundary.
 
     Idempotent: rows whose bet_id already exists are skipped, not duplicated.
     Invalid rows go to migration_quarantine with the reason preserved — they are
     never silently dropped. Callers can inspect get_quarantine_log() afterwards.
 
-    Returns {'imported': N, 'skipped': N, 'quarantined': N}.
+    Returns {'imported': N, 'skipped': N, 'quarantined': N, 'snapshot_sha256': str}.
     """
     init_db()
 
     if not csv_path.exists():
         log.info("No CSV to migrate: %s", csv_path)
-        return {"imported": 0, "skipped": 0, "quarantined": 0}
+        return {"imported": 0, "skipped": 0, "quarantined": 0, "snapshot_sha256": ""}
 
     with csv_path.open("r", encoding="utf-8", newline="") as fh:
         rows = list(_csv.DictReader(fh))
 
     if not rows:
         log.info("CSV exists but is empty — nothing to migrate.")
-        return {"imported": 0, "skipped": 0, "quarantined": 0}
+        return {"imported": 0, "skipped": 0, "quarantined": 0, "snapshot_sha256": ""}
 
-    counts: dict[str, int] = {"imported": 0, "skipped": 0, "quarantined": 0}
+    snapshot_digest = _snapshot_csv(csv_path)
+    counts: dict = {"imported": 0, "skipped": 0, "quarantined": 0, "snapshot_sha256": snapshot_digest}
     now = _utcnow()
 
     # Track running bankroll locally so we don't need repeated queries mid-transaction
@@ -507,6 +576,86 @@ def get_quarantine_log() -> list[dict]:
                 "SELECT * FROM migration_quarantine ORDER BY created_at DESC"
             ).fetchall()
         ]
+    finally:
+        conn.close()
+
+
+def verify_ledger() -> dict:
+    """
+    Run integrity checks on the ledger and return a health report.
+
+    Checks performed:
+      no_negative_bankroll  — no ledger entry has bankroll_after < 0
+      ledger_continuity     — each entry's bankroll_after equals the next entry's
+                              bankroll_before (using id-ordered sequence)
+      valid_bet_statuses    — all bets have a recognised status value
+      no_orphan_entries     — every ledger entry with a bet_id references an existing bet
+
+    Returns:
+      ok (bool)         — True only if all checks pass
+      checks (dict)     — per-check pass/fail
+      errors (list)     — human-readable descriptions of failures
+      stats (dict)      — counts and current bankroll
+    """
+    init_db()
+    conn = _connect()
+    errors: list[str] = []
+    checks: dict[str, bool] = {}
+
+    try:
+        # 1. No negative bankroll_after
+        neg = conn.execute(
+            "SELECT COUNT(*) FROM ledger_entries WHERE CAST(bankroll_after AS REAL) < 0"
+        ).fetchone()[0]
+        checks["no_negative_bankroll"] = neg == 0
+        if neg:
+            errors.append(f"{neg} ledger entries with bankroll_after < 0")
+
+        # 2. Continuity: bankroll_after[n] must equal bankroll_before[n+1]
+        rows = conn.execute(
+            "SELECT id, bankroll_before, bankroll_after "
+            "FROM ledger_entries ORDER BY created_at ASC, id ASC"
+        ).fetchall()
+        breaks = sum(
+            1 for i in range(len(rows) - 1)
+            if rows[i]["bankroll_after"] != rows[i + 1]["bankroll_before"]
+        )
+        checks["ledger_continuity"] = breaks == 0
+        if breaks:
+            errors.append(f"{breaks} bankroll continuity break(s) in ledger sequence")
+
+        # 3. Valid bet statuses
+        bad = conn.execute(
+            "SELECT COUNT(*) FROM bets "
+            "WHERE status NOT IN ('pending','won','lost','push','void')"
+        ).fetchone()[0]
+        checks["valid_bet_statuses"] = bad == 0
+        if bad:
+            errors.append(f"{bad} bet(s) with unrecognised status")
+
+        # 4. No orphan ledger entries
+        orphans = conn.execute(
+            "SELECT COUNT(*) FROM ledger_entries le "
+            "LEFT JOIN bets b ON le.bet_id = b.id "
+            "WHERE le.bet_id IS NOT NULL AND b.id IS NULL"
+        ).fetchone()[0]
+        checks["no_orphan_entries"] = orphans == 0
+        if orphans:
+            errors.append(f"{orphans} ledger entries referencing non-existent bets")
+
+        return {
+            "ok":     len(errors) == 0,
+            "checks": checks,
+            "errors": errors,
+            "stats": {
+                "schema_version":  get_schema_version(),
+                "ledger_entries":  conn.execute("SELECT COUNT(*) FROM ledger_entries").fetchone()[0],
+                "total_bets":      conn.execute("SELECT COUNT(*) FROM bets").fetchone()[0],
+                "pending_bets":    conn.execute("SELECT COUNT(*) FROM bets WHERE status='pending'").fetchone()[0],
+                "quarantined_rows": conn.execute("SELECT COUNT(*) FROM migration_quarantine").fetchone()[0],
+                "current_bankroll": str(current_bankroll()),
+            },
+        }
     finally:
         conn.close()
 
