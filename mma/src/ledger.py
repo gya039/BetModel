@@ -939,6 +939,246 @@ def verify_ledger() -> dict:
         conn.close()
 
 
+# ── Settlement preview ─────────────────────────────────────────────────────────
+
+def _current_head_hash() -> str:
+    """Read the current ledger head hash — no lock, no mutation."""
+    conn = _connect()
+    try:
+        row = conn.execute(
+            "SELECT entry_hash FROM ledger_entries ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        return row["entry_hash"] if row else _GENESIS_HASH
+    finally:
+        conn.close()
+
+
+def settlement_preview(settlements: list[dict]) -> dict:
+    """
+    Compute the projected outcome of settling a list of bets.
+    Pure read — acquires NO lock, performs NO mutations, writes NOTHING.
+
+    settlements: [{"bet_id": str, "result": "won"|"lost"|"push"|"void"}, ...]
+
+    Each item is validated and classified. Valid settlements are simulated in
+    order against the current committed bankroll. Failures are collected in
+    'skipped' with structured reasons rather than silently dropped.
+
+    Failure reasons (in 'skipped'):
+      invalid_result   — result not in {won, lost, push, void}
+      missing_bet      — bet_id not found in the DB
+      already_settled  — bet status is not 'pending'
+      bankroll_negative — settlement would take bankroll below zero
+
+    The returned preview_hash is sha256 of the canonical payload (including
+    starting_head_hash and all inputs/outputs). Pass it unchanged to
+    settle_event() to guarantee the committed result matches what was previewed.
+    settle_event() rejects any hash that does not exactly match a fresh
+    regeneration — catching stale previews, concurrent mutations, or drift.
+    """
+    init_db()
+    now               = _utcnow()
+    head_hash         = _current_head_hash()
+    starting_bankroll = current_bankroll()
+    bankroll          = starting_bankroll
+
+    outcomes: list[dict] = []
+    skipped:  list[dict] = []
+    warnings: list[str]  = []
+
+    conn = _connect()
+    try:
+        for item in settlements:
+            bet_id = str(item.get("bet_id", "")).strip()
+            result = str(item.get("result", "")).strip().lower()
+
+            if result not in _SETTLEMENT_ENTRY:
+                skipped.append({
+                    "bet_id": bet_id,
+                    "reason": "invalid_result",
+                    "detail": f"Result {result!r} not in {{won, lost, push, void}}",
+                })
+                continue
+
+            row = conn.execute("SELECT * FROM bets WHERE id = ?", (bet_id,)).fetchone()
+            if not row:
+                skipped.append({
+                    "bet_id": bet_id,
+                    "reason": "missing_bet",
+                    "detail": f"No bet found with id {bet_id[:12]}…",
+                })
+                continue
+
+            if row["status"] != BET_PENDING:
+                skipped.append({
+                    "bet_id":    bet_id,
+                    "reason":    "already_settled",
+                    "detail":    f"Status is {row['status']!r} (expected 'pending')",
+                    "fight":     row["fight"],
+                    "market":    row["market"],
+                    "selection": row["selection"],
+                })
+                continue
+
+            stake           = money(row["stake_eur"])
+            odds            = d(row["odds"])
+            bankroll_before = bankroll
+
+            if result == BET_WON:
+                total_return   = money(stake * odds)
+                bankroll_after = money(bankroll_before + total_return)
+                amount_ret     = total_return
+                pnl            = money(total_return - stake)
+            elif result == BET_LOST:
+                bankroll_after = bankroll_before
+                amount_ret     = Decimal("0.00")
+                pnl            = money(-stake)          # stake already gone at placement
+            else:  # push or void
+                bankroll_after = money(bankroll_before + stake)
+                amount_ret     = stake
+                pnl            = Decimal("0.00")
+
+            if bankroll_after < Decimal("0"):
+                skipped.append({
+                    "bet_id": bet_id,
+                    "reason": "bankroll_negative",
+                    "detail": f"Would produce bankroll EUR {bankroll_after}",
+                    "fight":  row["fight"],
+                })
+                warnings.append(
+                    f"Skipped {bet_id[:12]}… — settlement would drive bankroll negative"
+                )
+                continue
+
+            outcomes.append({
+                "bet_id":          bet_id,
+                "fight":           row["fight"],
+                "market":          row["market"],
+                "selection":       row["selection"],
+                "sportsbook":      row["sportsbook"] or "",
+                "odds":            str(odds),
+                "stake_eur":       str(stake),
+                "result":          result,
+                "amount_returned": str(amount_ret),
+                "pnl":             str(pnl),
+                "bankroll_before": str(bankroll_before),
+                "bankroll_after":  str(bankroll_after),
+            })
+            bankroll = bankroll_after
+    finally:
+        conn.close()
+
+    projected_bankroll = bankroll
+    projected_pnl      = money(projected_bankroll - starting_bankroll)
+
+    # Canonical payload — deterministic serialisation for stable hashing
+    canonical = {
+        "starting_head_hash": head_hash,
+        "starting_bankroll":  str(starting_bankroll),
+        "settlements_input":  [
+            {"bet_id": str(s.get("bet_id", "")), "result": str(s.get("result", ""))}
+            for s in settlements
+        ],
+        "outcomes": outcomes,
+        "skipped":  skipped,
+    }
+    preview_hash = hashlib.sha256(
+        json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+
+    return {
+        "preview_hash":       preview_hash,
+        "starting_head_hash": head_hash,
+        "starting_bankroll":  str(starting_bankroll),
+        "projected_bankroll": str(projected_bankroll),
+        "projected_pnl":      str(projected_pnl),
+        "outcomes":           outcomes,
+        "skipped":            skipped,
+        "warnings":           warnings,
+        "computed_at":        now,
+    }
+
+
+def settle_event(preview_hash: str, settlements: list[dict]) -> dict:
+    """
+    Settle a set of bets atomically, validated against a previously generated preview.
+
+    Protocol:
+      1. Acquire "ledger" lock
+      2. Regenerate preview from current ledger state (under the lock)
+      3. Compare regenerated preview_hash against submitted preview_hash
+         — mismatch means the ledger changed since preview, or input differs
+      4. Execute all valid outcomes in one atomic transaction
+
+    The hash comparison guarantees: what the operator approved is exactly
+    what gets committed. Any concurrent placement or settlement between
+    preview generation and settle_event() produces a different head_hash,
+    which propagates into a different preview_hash, which rejects the call.
+
+    Returns {settled, skipped, final_bankroll, preview_hash}.
+    Raises ValueError  if the submitted preview_hash does not match regeneration.
+    Raises PipelineLockError if another operation holds the lock.
+    """
+    init_db()
+
+    owner = f"settle_event:pid={os.getpid()}"
+    with acquire_lock("ledger", owner=owner, ttl_seconds=_TTL_LONG):
+        # Regenerate under the lock — ledger cannot change while we hold it
+        live = settlement_preview(settlements)
+
+        if live["preview_hash"] != preview_hash:
+            raise ValueError(
+                "Preview hash mismatch — ledger state changed since preview was generated.\n"
+                f"  submitted:   {preview_hash[:32]}…\n"
+                f"  regenerated: {live['preview_hash'][:32]}…\n"
+                "Generate a fresh preview and resubmit."
+            )
+
+        outcomes = live["outcomes"]
+        if not outcomes:
+            return {
+                "settled":        0,
+                "skipped":        len(live["skipped"]),
+                "final_bankroll": live["starting_bankroll"],
+                "preview_hash":   preview_hash,
+            }
+
+        now = _utcnow()
+        with _tx() as conn:
+            for outcome in outcomes:
+                bet_id = outcome["bet_id"]
+                result = outcome["result"]
+                conn.execute(
+                    "UPDATE bets SET status = ?, settled_at = ? WHERE id = ?",
+                    (result, now, bet_id),
+                )
+                _insert_ledger_entry(
+                    conn,
+                    entry_type      = _SETTLEMENT_ENTRY[result],
+                    bet_id          = bet_id,
+                    amount          = outcome["amount_returned"],
+                    bankroll_before = outcome["bankroll_before"],
+                    bankroll_after  = outcome["bankroll_after"],
+                    description     = (
+                        f"{result.title()}: {outcome['fight']} — "
+                        f"{outcome['selection']} @ {outcome['odds']}"
+                    ),
+                    created_at      = now,
+                )
+
+    final_bankroll = current_bankroll()
+    log.info(
+        "Event settled: %d bets, %d skipped, final bankroll EUR %s",
+        len(outcomes), len(live["skipped"]), final_bankroll,
+    )
+    return {
+        "settled":        len(outcomes),
+        "skipped":        len(live["skipped"]),
+        "final_bankroll": str(final_bankroll),
+        "preview_hash":   preview_hash,
+    }
+
+
 # ── Query helpers ──────────────────────────────────────────────────────────────
 
 def get_pending_bets() -> list[dict]:
