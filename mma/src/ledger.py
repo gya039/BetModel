@@ -8,6 +8,7 @@ Source of truth for:
   - current bankroll (derived from last ledger entry)
   - bet lifecycle: pending → won / lost / push / void
   - all bankroll mutations (append-only ledger_entries with cryptographic hash chain)
+  - pipeline locking (prevents concurrent mutation and rebuild races)
 
 Hash chain design
 -----------------
@@ -19,16 +20,24 @@ where payload = {id, prev_hash, entry_type, bet_id, amount, bankroll_after, crea
 The first entry chains from _GENESIS_HASH = sha256(b"GENESIS").
 Hashes are immutable once committed. Only migration backfill, rebuild, and integrity
 tooling may read them for verification — normal operation only writes them.
+
+Locking model
+-------------
+All mutations (place_bet, settle_bet, migrate_from_csv) and reconstructions
+(rebuild_bankroll) must hold the "ledger" lock before operating. Acquisition
+uses BEGIN IMMEDIATE to atomically clear stale locks and INSERT the new one.
+Failed acquisition raises PipelineLockError immediately — no waiting or retry.
 """
 from __future__ import annotations
 
 import csv as _csv
 import hashlib
 import json
+import os
 import re
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 from typing import Iterator
@@ -37,12 +46,16 @@ from utils import DATA_PROC, get_logger
 
 log = get_logger("ledger")
 
-DB_PATH       = DATA_PROC / "betting" / "ledger.db"
-BASE_BANKROLL = Decimal("500.00")
-SCHEMA_VERSION = 2
+DB_PATH        = DATA_PROC / "betting" / "ledger.db"
+BASE_BANKROLL  = Decimal("500.00")
+SCHEMA_VERSION = 3
 
 # Cryptographic anchor for the first ledger entry
 _GENESIS_HASH = hashlib.sha256(b"GENESIS").hexdigest()
+
+# Lock TTLs
+_TTL_WRITE   = 30   # seconds — place_bet, settle_bet
+_TTL_LONG    = 120  # seconds — migrate_from_csv, rebuild_bankroll
 
 # Entry type constants
 ENTRY_BET_PLACED = "bet_placed"
@@ -66,6 +79,24 @@ _SETTLEMENT_ENTRY = {
     BET_PUSH: ENTRY_BET_PUSH,
     BET_VOID: ENTRY_BET_VOID,
 }
+
+
+# ── Exceptions ─────────────────────────────────────────────────────────────────
+
+class PipelineLockError(Exception):
+    """Raised when a required pipeline lock is already held by another operation."""
+
+    def __init__(self, lock_name: str, holder: dict):
+        self.lock_name = lock_name
+        self.holder    = holder
+        owner   = holder.get("owner", "unknown")
+        acq     = holder.get("acquired_at", "?")
+        expires = holder.get("expires_at", "?")
+        super().__init__(
+            f"Lock {lock_name!r} held by {owner!r} "
+            f"(acquired {acq}, expires {expires}). "
+            f"Call release_stale_lock({lock_name!r}) if the process is gone."
+        )
 
 
 # ── Decimal helpers ────────────────────────────────────────────────────────────
@@ -120,24 +151,24 @@ def _compute_entry_hash(
 ) -> str:
     """
     Deterministic hash for one ledger entry.
-    Payload is JSON-serialised with sort_keys + minimal separators to guarantee
+    Payload is JSON-serialised with sort_keys + minimal separators for
     byte-identical output regardless of Python version or dict insertion order.
     """
     payload = {
-        "id":            entry_id,
-        "prev_hash":     prev_hash,
-        "entry_type":    entry_type,
-        "bet_id":        bet_id or "",
-        "amount":        amount,
+        "id":             entry_id,
+        "prev_hash":      prev_hash,
+        "entry_type":     entry_type,
+        "bet_id":         bet_id or "",
+        "amount":         amount,
         "bankroll_after": bankroll_after,
-        "created_at":    created_at,
+        "created_at":     created_at,
     }
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode()).hexdigest()
 
 
 def _get_head_hash(conn: sqlite3.Connection) -> str:
-    """Return the entry_hash of the last committed ledger row, or _GENESIS_HASH if empty."""
+    """Return entry_hash of the last committed ledger row, or _GENESIS_HASH if empty."""
     row = conn.execute(
         "SELECT entry_hash FROM ledger_entries ORDER BY id DESC LIMIT 1"
     ).fetchone()
@@ -155,12 +186,11 @@ def _insert_ledger_entry(
     created_at: str,
 ) -> tuple[int, str]:
     """
-    Insert one ledger entry, then immediately update its entry_hash within the
-    same open transaction. Returns (entry_id, entry_hash).
+    Insert one ledger entry and immediately finalise its entry_hash within
+    the same open transaction. Returns (entry_id, entry_hash).
 
-    The INSERT+UPDATE is atomic (both are inside the caller's BEGIN…COMMIT).
-    External observers only ever see the committed row with its hash set — this
-    preserves append-only semantics.
+    The INSERT+UPDATE is atomic inside the caller's BEGIN…COMMIT.
+    External observers only ever see a committed row with its hash set.
     """
     prev_hash = _get_head_hash(conn)
 
@@ -170,9 +200,9 @@ def _insert_ledger_entry(
             description, created_at, entry_hash)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
         (entry_type, bet_id, amount, bankroll_before, bankroll_after,
-         description, created_at, ""),        # placeholder: replaced below before COMMIT
+         description, created_at, ""),
     )
-    entry_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    entry_id   = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
     entry_hash = _compute_entry_hash(
         prev_hash, entry_id, entry_type, bet_id, amount, bankroll_after, created_at
     )
@@ -226,6 +256,13 @@ CREATE TABLE IF NOT EXISTS ledger_entries (
     entry_hash      TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS pipeline_locks (
+    lock_name   TEXT PRIMARY KEY,
+    acquired_at TEXT NOT NULL,
+    expires_at  TEXT NOT NULL,
+    owner       TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS migration_quarantine (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     source_row  TEXT NOT NULL,
@@ -267,9 +304,9 @@ def _tx() -> Iterator[sqlite3.Connection]:
 
 
 def _db_has_entry_hash() -> bool:
-    """Return True if the DB file exists and ledger_entries has the entry_hash column."""
+    """Return True if the DB has the entry_hash column (v2+ schema)."""
     if not DB_PATH.exists():
-        return True  # no file → fresh init will be v2
+        return True
     conn = _connect()
     try:
         cols = {row[1] for row in conn.execute("PRAGMA table_info(ledger_entries)").fetchall()}
@@ -282,15 +319,14 @@ def _db_has_entry_hash() -> bool:
 
 def init_db() -> None:
     """
-    Initialise schema at SCHEMA_VERSION.  Safe to call multiple times.
+    Initialise or upgrade schema to SCHEMA_VERSION. Safe to call multiple times.
 
-    If a v1 DB (no entry_hash column) is detected, it is dropped and recreated
-    from scratch.  This is the correct behaviour while no production data exists —
-    a clean v2 foundation is more valuable than preserving smoke-test rows.
+    v1 DBs (no entry_hash) are dropped and recreated — correct for development.
+    v2 DBs gain the pipeline_locks table via CREATE IF NOT EXISTS (no data loss).
     """
     if not _db_has_entry_hash():
         log.warning(
-            "v1 schema detected (missing entry_hash). Dropping DB for clean v2 init: %s",
+            "Pre-v2 schema detected (missing entry_hash). Dropping DB for clean init: %s",
             DB_PATH,
         )
         DB_PATH.unlink(missing_ok=True)
@@ -298,11 +334,11 @@ def init_db() -> None:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = _connect()
     try:
-        conn.executescript(_SCHEMA)   # executescript auto-commits; no tx open afterwards
-        row = conn.execute(
-            "SELECT version FROM schema_version ORDER BY version DESC LIMIT 1"
-        ).fetchone()
-        if not row:
+        conn.executescript(_SCHEMA)
+        current = conn.execute(
+            "SELECT COALESCE(MAX(version), 0) FROM schema_version"
+        ).fetchone()[0]
+        if current < SCHEMA_VERSION:
             conn.execute("BEGIN")
             conn.execute(
                 "INSERT INTO schema_version (version, applied_at) VALUES (?, ?)",
@@ -326,12 +362,115 @@ def get_schema_version() -> int:
         conn.close()
 
 
+# ── Pipeline locking ───────────────────────────────────────────────────────────
+
+@contextmanager
+def acquire_lock(lock_name: str, owner: str, ttl_seconds: int = _TTL_WRITE) -> Iterator[None]:
+    """
+    Acquire a named exclusive pipeline lock. Fails immediately with PipelineLockError
+    if the lock is held and not expired — never blocks or retries.
+
+    Uses BEGIN IMMEDIATE so the stale-lock DELETE and the new INSERT are a single
+    atomic write operation, preventing TOCTOU races under concurrent access.
+
+    Releases the lock on context exit (including on exception).
+
+    Usage:
+        with acquire_lock("ledger", owner="place_bet:pid=1234"):
+            ...
+    """
+    init_db()
+    now     = _utcnow()
+    expires = _utcnow_plus(ttl_seconds)
+
+    # Acquire
+    conn = _connect()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        # Remove expired lock for this name before attempting to acquire
+        conn.execute(
+            "DELETE FROM pipeline_locks WHERE lock_name = ? AND expires_at < ?",
+            (lock_name, now),
+        )
+        try:
+            conn.execute(
+                "INSERT INTO pipeline_locks (lock_name, acquired_at, expires_at, owner) "
+                "VALUES (?, ?, ?, ?)",
+                (lock_name, now, expires, owner),
+            )
+        except sqlite3.IntegrityError:
+            conn.execute("ROLLBACK")
+            holder = conn.execute(
+                "SELECT * FROM pipeline_locks WHERE lock_name = ?", (lock_name,)
+            ).fetchone()
+            raise PipelineLockError(lock_name, dict(holder) if holder else {})
+        conn.execute("COMMIT")
+    finally:
+        conn.close()
+
+    log.debug("Lock acquired: %s by %s (ttl=%ds)", lock_name, owner, ttl_seconds)
+
+    try:
+        yield
+    finally:
+        # Release
+        conn = _connect()
+        try:
+            conn.execute("BEGIN")
+            conn.execute(
+                "DELETE FROM pipeline_locks WHERE lock_name = ? AND owner = ?",
+                (lock_name, owner),
+            )
+            conn.execute("COMMIT")
+        finally:
+            conn.close()
+        log.debug("Lock released: %s by %s", lock_name, owner)
+
+
+def release_stale_lock(lock_name: str) -> bool:
+    """
+    Forcibly release a named lock regardless of owner or expiry.
+    Use for manual recovery after a crashed process left a lock behind.
+    Returns True if a lock was removed.
+    """
+    init_db()
+    conn = _connect()
+    try:
+        conn.execute("BEGIN")
+        result = conn.execute(
+            "DELETE FROM pipeline_locks WHERE lock_name = ?", (lock_name,)
+        )
+        conn.execute("COMMIT")
+        removed = result.rowcount > 0
+        if removed:
+            log.warning("Stale lock force-released: %s", lock_name)
+        return removed
+    finally:
+        conn.close()
+
+
+def get_lock_status() -> list[dict]:
+    """Return all currently held pipeline locks (including expired ones)."""
+    init_db()
+    conn = _connect()
+    try:
+        return [
+            dict(r) for r in conn.execute(
+                "SELECT *, expires_at < ? AS is_expired "
+                "FROM pipeline_locks ORDER BY acquired_at DESC",
+                (_utcnow(),),
+            ).fetchall()
+        ]
+    finally:
+        conn.close()
+
+
 # ── Bankroll query ─────────────────────────────────────────────────────────────
 
 def current_bankroll() -> Decimal:
     """
     Derive current bankroll from the last ledger entry.
-    Returns BASE_BANKROLL if the ledger is empty (fresh system).
+    Returns BASE_BANKROLL if the ledger is empty.
     Never reads from CSV or any mutable source.
     """
     init_db()
@@ -359,8 +498,10 @@ def place_bet(
 ) -> str:
     """
     Record a new bet placement. Deducts stake from bankroll atomically.
+    Acquires the "ledger" lock for the duration — concurrent placements fail fast.
     Returns the deterministic bet_id.
     Raises ValueError on: duplicate bet, zero/negative stake, insufficient bankroll.
+    Raises PipelineLockError if a concurrent operation holds the lock.
     """
     init_db()
     odds_d  = d(odds)
@@ -371,38 +512,40 @@ def place_bet(
     if stake_d <= Decimal("0"):
         raise ValueError(f"Stake must be positive, got: {stake_d}")
 
-    with _tx() as conn:
-        if conn.execute("SELECT id FROM bets WHERE id = ?", (bet_id,)).fetchone():
-            raise ValueError(
-                f"Bet already exists: {bet_id[:12]}… ({fight} / {market} / {selection})"
+    owner = f"place_bet:{bet_id[:8]}:pid={os.getpid()}"
+    with acquire_lock("ledger", owner=owner, ttl_seconds=_TTL_WRITE):
+        with _tx() as conn:
+            if conn.execute("SELECT id FROM bets WHERE id = ?", (bet_id,)).fetchone():
+                raise ValueError(
+                    f"Bet already exists: {bet_id[:12]}… ({fight} / {market} / {selection})"
+                )
+
+            bankroll_before = current_bankroll()
+            bankroll_after  = money(bankroll_before - stake_d)
+
+            if bankroll_after < Decimal("0"):
+                raise ValueError(
+                    f"Insufficient bankroll: EUR {bankroll_before} < stake EUR {stake_d}"
+                )
+
+            conn.execute(
+                """INSERT INTO bets
+                   (id, event_date, fight, market, selection, sportsbook,
+                    odds, stake_eur, status, placed_at, notes)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (bet_id, event_date, fight, market, selection, sportsbook,
+                 str(odds_d), str(stake_d), BET_PENDING, now, notes),
             )
-
-        bankroll_before = current_bankroll()
-        bankroll_after  = money(bankroll_before - stake_d)
-
-        if bankroll_after < Decimal("0"):
-            raise ValueError(
-                f"Insufficient bankroll: EUR {bankroll_before} < stake EUR {stake_d}"
+            _insert_ledger_entry(
+                conn,
+                entry_type      = ENTRY_BET_PLACED,
+                bet_id          = bet_id,
+                amount          = str(stake_d),
+                bankroll_before = str(bankroll_before),
+                bankroll_after  = str(bankroll_after),
+                description     = f"Bet placed: {fight} — {selection} @ {odds_d}",
+                created_at      = now,
             )
-
-        conn.execute(
-            """INSERT INTO bets
-               (id, event_date, fight, market, selection, sportsbook,
-                odds, stake_eur, status, placed_at, notes)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (bet_id, event_date, fight, market, selection, sportsbook,
-             str(odds_d), str(stake_d), BET_PENDING, now, notes),
-        )
-        _insert_ledger_entry(
-            conn,
-            entry_type      = ENTRY_BET_PLACED,
-            bet_id          = bet_id,
-            amount          = str(stake_d),
-            bankroll_before = str(bankroll_before),
-            bankroll_after  = str(bankroll_after),
-            description     = f"Bet placed: {fight} — {selection} @ {odds_d}",
-            created_at      = now,
-        )
 
     log.info("Placed [%s…] %s / %s @ %s — EUR %s", bet_id[:8], fight, selection, odds_d, stake_d)
     return bet_id
@@ -413,6 +556,7 @@ def place_bet(
 def settle_bet(bet_id: str, result: str, notes: str = "") -> Decimal:
     """
     Settle a pending bet. result must be 'won', 'lost', 'push', or 'void'.
+    Acquires the "ledger" lock for the duration.
 
     Accounting:
       won  — return stake * odds (stake + profit)
@@ -421,63 +565,66 @@ def settle_bet(bet_id: str, result: str, notes: str = "") -> Decimal:
       void — return stake only
 
     Returns new bankroll after settlement.
+    Raises PipelineLockError if a concurrent operation holds the lock.
     """
     init_db()
     result = result.lower().strip()
     if result not in _SETTLEMENT_ENTRY:
         raise ValueError(f"Invalid result {result!r}. Must be: won / lost / push / void")
 
-    with _tx() as conn:
-        row = conn.execute("SELECT * FROM bets WHERE id = ?", (bet_id,)).fetchone()
-        if not row:
-            raise ValueError(f"Bet not found: {bet_id}")
-        if row["status"] != BET_PENDING:
-            raise ValueError(f"Bet {bet_id[:12]}… already settled as {row['status']!r}")
+    owner = f"settle_bet:{bet_id[:8]}:pid={os.getpid()}"
+    with acquire_lock("ledger", owner=owner, ttl_seconds=_TTL_WRITE):
+        with _tx() as conn:
+            row = conn.execute("SELECT * FROM bets WHERE id = ?", (bet_id,)).fetchone()
+            if not row:
+                raise ValueError(f"Bet not found: {bet_id}")
+            if row["status"] != BET_PENDING:
+                raise ValueError(f"Bet {bet_id[:12]}… already settled as {row['status']!r}")
 
-        stake           = money(row["stake_eur"])
-        odds            = d(row["odds"])
-        bankroll_before = current_bankroll()
-        now             = _utcnow()
+            stake           = money(row["stake_eur"])
+            odds            = d(row["odds"])
+            bankroll_before = current_bankroll()
+            now             = _utcnow()
 
-        if result == BET_WON:
-            total_return   = money(stake * odds)
-            bankroll_after = money(bankroll_before + total_return)
-            amount         = total_return
-            profit         = money(total_return - stake)
-            description    = (
-                f"Won: {row['fight']} — {row['selection']} @ {odds} "
-                f"(profit EUR {profit})"
+            if result == BET_WON:
+                total_return   = money(stake * odds)
+                bankroll_after = money(bankroll_before + total_return)
+                amount         = total_return
+                profit         = money(total_return - stake)
+                description    = (
+                    f"Won: {row['fight']} — {row['selection']} @ {odds} "
+                    f"(profit EUR {profit})"
+                )
+            elif result == BET_LOST:
+                bankroll_after = bankroll_before
+                amount         = Decimal("0.00")
+                description    = f"Lost: {row['fight']} — {row['selection']} @ {odds}"
+            else:  # push or void
+                bankroll_after = money(bankroll_before + stake)
+                amount         = stake
+                label          = "Push" if result == BET_PUSH else "Void"
+                description    = f"{label}: {row['fight']} — {row['selection']} (stake returned)"
+
+            conn.execute(
+                """UPDATE bets
+                   SET status = ?, settled_at = ?,
+                       notes = COALESCE(NULLIF(?, ''), notes)
+                   WHERE id = ?""",
+                (result, now, notes, bet_id),
             )
-        elif result == BET_LOST:
-            bankroll_after = bankroll_before
-            amount         = Decimal("0.00")
-            description    = f"Lost: {row['fight']} — {row['selection']} @ {odds}"
-        else:  # push or void
-            bankroll_after = money(bankroll_before + stake)
-            amount         = stake
-            label          = "Push" if result == BET_PUSH else "Void"
-            description    = f"{label}: {row['fight']} — {row['selection']} (stake returned)"
-
-        conn.execute(
-            """UPDATE bets
-               SET status = ?, settled_at = ?,
-                   notes = COALESCE(NULLIF(?, ''), notes)
-               WHERE id = ?""",
-            (result, now, notes, bet_id),
-        )
-        _insert_ledger_entry(
-            conn,
-            entry_type      = _SETTLEMENT_ENTRY[result],
-            bet_id          = bet_id,
-            amount          = str(amount),
-            bankroll_before = str(bankroll_before),
-            bankroll_after  = str(bankroll_after),
-            description     = description,
-            created_at      = now,
-        )
+            _insert_ledger_entry(
+                conn,
+                entry_type      = _SETTLEMENT_ENTRY[result],
+                bet_id          = bet_id,
+                amount          = str(amount),
+                bankroll_before = str(bankroll_before),
+                bankroll_after  = str(bankroll_after),
+                description     = description,
+                created_at      = now,
+            )
 
     log.info(
-        "Settled [%s…] result=%s  EUR %s → EUR %s",
+        "Settled [%s…] result=%s  EUR %s -> EUR %s",
         bet_id[:8], result, bankroll_before, bankroll_after,
     )
     return bankroll_after
@@ -486,10 +633,7 @@ def settle_bet(bet_id: str, result: str, notes: str = "") -> Decimal:
 # ── Migration ──────────────────────────────────────────────────────────────────
 
 def _snapshot_csv(csv_path: Path) -> str:
-    """
-    Archive csv_path to <name>.bak and write a <name>.sha256 checksum file.
-    Returns the hex digest. Idempotent: skips if .bak already exists.
-    """
+    """Archive csv_path as .bak and write a .sha256 checksum. Idempotent."""
     import shutil
 
     bak_path = csv_path.with_suffix(csv_path.suffix + ".bak")
@@ -511,14 +655,14 @@ def _snapshot_csv(csv_path: Path) -> str:
 def migrate_from_csv(csv_path: Path) -> dict:
     """
     Import historical bet_history.csv into the ledger.
+    Acquires the "ledger" lock for the full duration of import.
 
-    Before processing: archives CSV as .bak and writes a .sha256 checksum —
-    giving permanent forensic provenance for the migration boundary.
-
-    Idempotent: rows whose bet_id already exists are skipped, not duplicated.
+    Archives CSV as .bak + .sha256 before any row is touched.
+    Idempotent: rows whose bet_id already exists are skipped.
     Invalid rows go to migration_quarantine with reason preserved.
 
     Returns {'imported': N, 'skipped': N, 'quarantined': N, 'snapshot_sha256': str}.
+    Raises PipelineLockError if a concurrent operation holds the lock.
     """
     init_db()
 
@@ -537,95 +681,98 @@ def migrate_from_csv(csv_path: Path) -> dict:
     counts: dict    = {"imported": 0, "skipped": 0, "quarantined": 0, "snapshot_sha256": snapshot_digest}
     now             = _utcnow()
 
-    # Track running bankroll locally — avoids repeated queries mid-transaction
-    running_bankroll = current_bankroll()
+    owner = f"migrate_from_csv:pid={os.getpid()}"
+    with acquire_lock("ledger", owner=owner, ttl_seconds=_TTL_LONG):
+        running_bankroll = current_bankroll()
 
-    with _tx() as conn:
-        for raw in rows:
-            reason = _validate_csv_row(raw)
-            if reason:
+        with _tx() as conn:
+            for raw in rows:
+                reason = _validate_csv_row(raw)
+                if reason:
+                    conn.execute(
+                        "INSERT INTO migration_quarantine (source_row, reason, created_at) "
+                        "VALUES (?, ?, ?)",
+                        (str(dict(raw)), reason, now),
+                    )
+                    log.warning("Quarantined: %s — %s", raw.get("fight", "?"), reason)
+                    counts["quarantined"] += 1
+                    continue
+
+                event_date = raw["date"].strip()
+                fight      = raw["fight"].strip()
+                market     = raw["market"].strip()
+                selection  = raw["selection"].strip()
+                sportsbook = raw.get("sportsbook", "").strip()
+                notes      = raw.get("notes", "").strip()
+
+                try:
+                    odds_d  = d(raw["odds"])
+                    stake_d = money(raw["stake_eur"])
+                except Exception as exc:
+                    conn.execute(
+                        "INSERT INTO migration_quarantine (source_row, reason, created_at) "
+                        "VALUES (?, ?, ?)",
+                        (str(dict(raw)), f"Decimal parse error: {exc}", now),
+                    )
+                    counts["quarantined"] += 1
+                    continue
+
+                bet_id = make_bet_id(event_date, fight, market, selection, odds_d)
+
+                if conn.execute("SELECT id FROM bets WHERE id = ?", (bet_id,)).fetchone():
+                    counts["skipped"] += 1
+                    continue
+
+                result_raw = raw.get("result", "").strip().lower()
+                result_map = {
+                    "win": BET_WON, "won": BET_WON,
+                    "loss": BET_LOST, "lost": BET_LOST,
+                    "push": BET_PUSH, "void": BET_VOID,
+                }
+                status     = result_map.get(result_raw, BET_PENDING)
+                settled_at = now if status != BET_PENDING else None
+
+                try:
+                    br_before = money(raw["bankroll_before"]) if raw.get("bankroll_before", "").strip() else None
+                    br_after  = money(raw["bankroll_after"])  if raw.get("bankroll_after",  "").strip() else None
+                except Exception:
+                    br_before = br_after = None
+
+                if br_before is None:
+                    br_before = running_bankroll
+                if br_after is None:
+                    if status == BET_WON:
+                        pnl_raw = raw.get("pnl", "").strip()
+                        try:
+                            pnl = money(pnl_raw) if pnl_raw else money(stake_d * (odds_d - Decimal("1")))
+                        except Exception:
+                            pnl = money(stake_d * (odds_d - Decimal("1")))
+                        br_after = money(br_before + pnl)
+                    elif status in (BET_PUSH, BET_VOID):
+                        br_after = br_before
+                    else:
+                        br_after = money(br_before - stake_d)
+
                 conn.execute(
-                    "INSERT INTO migration_quarantine (source_row, reason, created_at) VALUES (?, ?, ?)",
-                    (str(dict(raw)), reason, now),
+                    """INSERT INTO bets
+                       (id, event_date, fight, market, selection, sportsbook,
+                        odds, stake_eur, status, placed_at, settled_at, notes)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (bet_id, event_date, fight, market, selection, sportsbook,
+                     str(odds_d), str(stake_d), status, now, settled_at, notes),
                 )
-                log.warning("Quarantined: %s — %s", raw.get("fight", "?"), reason)
-                counts["quarantined"] += 1
-                continue
-
-            event_date = raw["date"].strip()
-            fight      = raw["fight"].strip()
-            market     = raw["market"].strip()
-            selection  = raw["selection"].strip()
-            sportsbook = raw.get("sportsbook", "").strip()
-            notes      = raw.get("notes", "").strip()
-
-            try:
-                odds_d  = d(raw["odds"])
-                stake_d = money(raw["stake_eur"])
-            except Exception as exc:
-                conn.execute(
-                    "INSERT INTO migration_quarantine (source_row, reason, created_at) VALUES (?, ?, ?)",
-                    (str(dict(raw)), f"Decimal parse error: {exc}", now),
+                _insert_ledger_entry(
+                    conn,
+                    entry_type      = ENTRY_MIGRATION,
+                    bet_id          = bet_id,
+                    amount          = str(stake_d),
+                    bankroll_before = str(br_before),
+                    bankroll_after  = str(br_after),
+                    description     = f"[migration] {fight} — {selection} @ {odds_d} [{status}]",
+                    created_at      = now,
                 )
-                counts["quarantined"] += 1
-                continue
-
-            bet_id = make_bet_id(event_date, fight, market, selection, odds_d)
-
-            if conn.execute("SELECT id FROM bets WHERE id = ?", (bet_id,)).fetchone():
-                counts["skipped"] += 1
-                continue
-
-            result_raw = raw.get("result", "").strip().lower()
-            result_map = {
-                "win": BET_WON, "won": BET_WON,
-                "loss": BET_LOST, "lost": BET_LOST,
-                "push": BET_PUSH, "void": BET_VOID,
-            }
-            status     = result_map.get(result_raw, BET_PENDING)
-            settled_at = now if status != BET_PENDING else None
-
-            try:
-                br_before = money(raw["bankroll_before"]) if raw.get("bankroll_before", "").strip() else None
-                br_after  = money(raw["bankroll_after"])  if raw.get("bankroll_after",  "").strip() else None
-            except Exception:
-                br_before = br_after = None
-
-            if br_before is None:
-                br_before = running_bankroll
-            if br_after is None:
-                if status == BET_WON:
-                    pnl_raw = raw.get("pnl", "").strip()
-                    try:
-                        pnl = money(pnl_raw) if pnl_raw else money(stake_d * (odds_d - Decimal("1")))
-                    except Exception:
-                        pnl = money(stake_d * (odds_d - Decimal("1")))
-                    br_after = money(br_before + pnl)
-                elif status in (BET_PUSH, BET_VOID):
-                    br_after = br_before
-                else:
-                    br_after = money(br_before - stake_d)
-
-            conn.execute(
-                """INSERT INTO bets
-                   (id, event_date, fight, market, selection, sportsbook,
-                    odds, stake_eur, status, placed_at, settled_at, notes)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (bet_id, event_date, fight, market, selection, sportsbook,
-                 str(odds_d), str(stake_d), status, now, settled_at, notes),
-            )
-            _insert_ledger_entry(
-                conn,
-                entry_type      = ENTRY_MIGRATION,
-                bet_id          = bet_id,
-                amount          = str(stake_d),
-                bankroll_before = str(br_before),
-                bankroll_after  = str(br_after),
-                description     = f"[migration] {fight} — {selection} @ {odds_d} [{status}]",
-                created_at      = now,
-            )
-            running_bankroll = br_after
-            counts["imported"] += 1
+                running_bankroll = br_after
+                counts["imported"] += 1
 
     log.info(
         "Migration complete: imported=%d  skipped=%d  quarantined=%d",
@@ -654,26 +801,27 @@ def _validate_csv_row(row: dict) -> str | None:
 
 def rebuild_bankroll() -> dict:
     """
-    Walk all ledger entries in insertion order (id ASC), recompute each
+    Walk all ledger entries in insertion order (id ASC), recompute every
     entry_hash, and verify chain continuity end-to-end.
+    Acquires the "ledger" lock — prevents concurrent mutations during reconstruction.
 
-    Fails hard (raises ValueError) on the first hash mismatch — a broken chain
-    means tampering, corruption, or ordering failure, and reconstruction must stop.
+    Fails hard (raises ValueError) on first hash mismatch or bankroll continuity break.
+    A broken chain indicates tampering, corruption, or ordering failure.
 
-    Also checks bankroll continuity: bankroll_after[n] must equal
-    bankroll_before[n+1] for every adjacent pair.
-
-    Returns:
-      ok (bool), entries_verified (int), final_bankroll (str), head_hash (str abbrev)
+    Returns: ok (bool), entries_verified (int), final_bankroll (str), head_hash (str).
+    Raises PipelineLockError if a concurrent operation holds the lock.
     """
     init_db()
-    conn = _connect()
-    try:
-        rows = conn.execute(
-            "SELECT * FROM ledger_entries ORDER BY id ASC"
-        ).fetchall()
-    finally:
-        conn.close()
+
+    owner = f"rebuild_bankroll:pid={os.getpid()}"
+    with acquire_lock("ledger", owner=owner, ttl_seconds=_TTL_LONG):
+        conn = _connect()
+        try:
+            rows = conn.execute(
+                "SELECT * FROM ledger_entries ORDER BY id ASC"
+            ).fetchall()
+        finally:
+            conn.close()
 
     if not rows:
         return {
@@ -687,13 +835,13 @@ def rebuild_bankroll() -> dict:
 
     for i, row in enumerate(rows):
         expected = _compute_entry_hash(
-            prev_hash     = prev_hash,
-            entry_id      = row["id"],
-            entry_type    = row["entry_type"],
-            bet_id        = row["bet_id"],
-            amount        = row["amount"],
+            prev_hash      = prev_hash,
+            entry_id       = row["id"],
+            entry_type     = row["entry_type"],
+            bet_id         = row["bet_id"],
+            amount         = row["amount"],
             bankroll_after = row["bankroll_after"],
-            created_at    = row["created_at"],
+            created_at     = row["created_at"],
         )
         stored = row["entry_hash"]
         if expected != stored:
@@ -726,8 +874,10 @@ def rebuild_bankroll() -> dict:
 def verify_ledger() -> dict:
     """
     Run integrity checks on the ledger and return a health report.
+    Delegates hash chain + continuity check to rebuild_bankroll() (which acquires
+    the "ledger" lock).
 
-    Checks performed:
+    Checks:
       hash_chain_valid     — rebuild_bankroll() passes end-to-end
       no_negative_bankroll — no entry has bankroll_after < 0
       valid_bet_statuses   — all bets have a recognised status value
@@ -736,20 +886,18 @@ def verify_ledger() -> dict:
     Returns ok (bool), checks (dict), errors (list), stats (dict).
     """
     init_db()
-    errors: list[str] = []
+    errors: list[str]      = []
     checks: dict[str, bool] = {}
 
-    # 1. Hash chain + bankroll continuity
     try:
-        rebuild_result = rebuild_bankroll()
-        checks["hash_chain_valid"] = rebuild_result["ok"]
-    except ValueError as exc:
+        rb = rebuild_bankroll()
+        checks["hash_chain_valid"] = rb["ok"]
+    except (ValueError, PipelineLockError) as exc:
         checks["hash_chain_valid"] = False
         errors.append(str(exc))
 
     conn = _connect()
     try:
-        # 2. No negative bankroll_after
         neg = conn.execute(
             "SELECT COUNT(*) FROM ledger_entries WHERE CAST(bankroll_after AS REAL) < 0"
         ).fetchone()[0]
@@ -757,7 +905,6 @@ def verify_ledger() -> dict:
         if neg:
             errors.append(f"{neg} ledger entries with bankroll_after < 0")
 
-        # 3. Valid bet statuses
         bad = conn.execute(
             "SELECT COUNT(*) FROM bets "
             "WHERE status NOT IN ('pending','won','lost','push','void')"
@@ -766,7 +913,6 @@ def verify_ledger() -> dict:
         if bad:
             errors.append(f"{bad} bet(s) with unrecognised status")
 
-        # 4. No orphan ledger entries
         orphans = conn.execute(
             "SELECT COUNT(*) FROM ledger_entries le "
             "LEFT JOIN bets b ON le.bet_id = b.id "
@@ -843,3 +989,8 @@ def get_quarantine_log() -> list[dict]:
 
 def _utcnow() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+
+def _utcnow_plus(seconds: int) -> str:
+    t = datetime.now(timezone.utc) + timedelta(seconds=seconds)
+    return t.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
