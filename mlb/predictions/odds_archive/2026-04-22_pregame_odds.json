@@ -1,0 +1,415 @@
+{
+  "KC_BAL": {
+    "home_ml": 12.0,
+    "away_ml": 1.06,
+    "home_rl": 4.0,
+    "away_rl": 1.17,
+    "home_rl_point": 1.5,
+    "away_rl_point": -1.5,
+    "home_no_vig": 0.0812,
+    "away_no_vig": 0.9188,
+    "home_rl_options": [
+      {
+        "line": 1.5,
+        "odds": 4.0
+      }
+    ],
+    "away_rl_options": [
+      {
+        "line": -1.5,
+        "odds": 1.17
+      }
+    ],
+    "book_count": 17
+  },
+  "LAA_TOR": {
+    "home_ml": 1.05,
+    "away_ml": 8.5,
+    "home_rl": 1.21,
+    "away_rl": 3.55,
+    "home_rl_point": -1.5,
+    "away_rl_point": 1.5,
+    "home_no_vig": 0.8901,
+    "away_no_vig": 0.1099,
+    "home_rl_options": [
+      {
+        "line": -3.5,
+        "odds": 2.25
+      },
+      {
+        "line": -3.0,
+        "odds": 1.93
+      },
+      {
+        "line": -2.5,
+        "odds": 1.8
+      },
+      {
+        "line": -1.5,
+        "odds": 1.21
+      }
+    ],
+    "away_rl_options": [
+      {
+        "line": 1.5,
+        "odds": 3.55
+      },
+      {
+        "line": 2.5,
+        "odds": 2.45
+      },
+      {
+        "line": 3.0,
+        "odds": 1.85
+      },
+      {
+        "line": 3.5,
+        "odds": 1.57
+      }
+    ],
+    "book_count": 18
+  },
+  "SEA_ATH": {
+    "home_ml": 1.95,
+    "away_ml": 1.8,
+    "home_rl": 1.5,
+    "away_rl": 2.4,
+    "home_rl_point": 1.5,
+    "away_rl_point": -1.5,
+    "home_no_vig": 0.48,
+    "away_no_vig": 0.52,
+    "home_rl_options": [
+      {
+        "line": -1.5,
+        "odds": 2.3
+      },
+      {
+        "line": 1.0,
+        "odds": 1.65
+      },
+      {
+        "line": 1.5,
+        "odds": 1.5
+      }
+    ],
+    "away_rl_options": [
+      {
+        "line": -1.5,
+        "odds": 2.4
+      },
+      {
+        "line": -1.0,
+        "odds": 2.23
+      },
+      {
+        "line": 1.5,
+        "odds": 1.55
+      }
+    ],
+    "book_count": 19
+  },
+  "DET_MIL": {
+    "home_ml": 1.73,
+    "away_ml": 2.1,
+    "home_rl": 2.66,
+    "away_rl": 1.57,
+    "home_rl_point": -1.5,
+    "away_rl_point": 1.5,
+    "home_no_vig": 0.5483,
+    "away_no_vig": 0.4517,
+    "home_rl_options": [
+      {
+        "line": -1.5,
+        "odds": 2.66
+      },
+      {
+        "line": -1.0,
+        "odds": 2.15
+      },
+      {
+        "line": 2.5,
+        "odds": 1.25
+      }
+    ],
+    "away_rl_options": [
+      {
+        "line": -2.5,
+        "odds": 3.75
+      },
+      {
+        "line": 1.0,
+        "odds": 1.72
+      },
+      {
+        "line": 1.5,
+        "odds": 1.57
+      }
+    ],
+    "book_count": 25
+  },
+  "BOS_NYY": {
+    "home_ml": 2.1,
+    "away_ml": 1.73,
+    "home_rl": 1.71,
+    "away_rl": 2.34,
+    "home_rl_point": 1.5,
+    "away_rl_point": -1.5,
+    "home_no_vig": 0.4517,
+    "away_no_vig": 0.5483,
+    "home_rl_options": [
+      {
+        "line": 1.0,
+        "odds": 1.87
+      },
+      {
+        "line": 1.5,
+        "odds": 1.71
+      },
+      {
+        "line": 2.5,
+        "odds": 1.4
+      }
+    ],
+    "away_rl_options": [
+      {
+        "line": -2.5,
+        "odds": 2.8
+      },
+      {
+        "line": -1.5,
+        "odds": 2.34
+      },
+      {
+        "line": -1.0,
+        "odds": 1.95
+      }
+    ],
+    "book_count": 25
+  },
+  "NYM_MIN": {
+    "home_ml": 1.62,
+    "away_ml": 2.3,
+    "home_rl": 2.48,
+    "away_rl": 1.65,
+    "home_rl_point": -1.5,
+    "away_rl_point": 1.5,
+    "home_no_vig": 0.5867,
+    "away_no_vig": 0.4133,
+    "home_rl_options": [
+      {
+        "line": -1.5,
+        "odds": 2.48
+      },
+      {
+        "line": -1.0,
+        "odds": 1.93
+      },
+      {
+        "line": 2.5,
+        "odds": 1.2
+      }
+    ],
+    "away_rl_options": [
+      {
+        "line": -2.5,
+        "odds": 4.33
+      },
+      {
+        "line": 1.0,
+        "odds": 1.88
+      },
+      {
+        "line": 1.5,
+        "odds": 1.65
+      }
+    ],
+    "book_count": 25
+  },
+  "CHC_PHI": {
+    "home_ml": 1.53,
+    "away_ml": 2.5,
+    "home_rl": 2.26,
+    "away_rl": 1.76,
+    "home_rl_point": -1.5,
+    "away_rl_point": 1.5,
+    "home_no_vig": 0.6203,
+    "away_no_vig": 0.3797,
+    "home_rl_options": [
+      {
+        "line": -1.5,
+        "odds": 2.26
+      },
+      {
+        "line": -1.0,
+        "odds": 1.85
+      },
+      {
+        "line": 2.5,
+        "odds": 1.17
+      }
+    ],
+    "away_rl_options": [
+      {
+        "line": -2.5,
+        "odds": 4.8
+      },
+      {
+        "line": 1.0,
+        "odds": 1.96
+      },
+      {
+        "line": 1.5,
+        "odds": 1.76
+      }
+    ],
+    "book_count": 25
+  },
+  "TEX_PIT": {
+    "home_ml": 1.91,
+    "away_ml": 1.91,
+    "home_rl": null,
+    "away_rl": null,
+    "home_rl_point": -1.5,
+    "away_rl_point": 1.5,
+    "home_no_vig": 0.5,
+    "away_no_vig": 0.5,
+    "home_rl_options": [
+      {
+        "line": 1.0,
+        "odds": 1.64
+      },
+      {
+        "line": 1.5,
+        "odds": 1.6
+      },
+      {
+        "line": 2.5,
+        "odds": 1.35
+      }
+    ],
+    "away_rl_options": [
+      {
+        "line": -2.5,
+        "odds": 3.1
+      },
+      {
+        "line": -1.5,
+        "odds": 2.58
+      },
+      {
+        "line": -1.0,
+        "odds": 2.3
+      }
+    ],
+    "book_count": 25
+  },
+  "COL_SD": {
+    "home_ml": 2.3,
+    "away_ml": 1.62,
+    "home_rl": 1.94,
+    "away_rl": 1.98,
+    "home_rl_point": 1.5,
+    "away_rl_point": -1.5,
+    "home_no_vig": 0.4133,
+    "away_no_vig": 0.5867,
+    "home_rl_options": [
+      {
+        "line": 1.5,
+        "odds": 1.94
+      },
+      {
+        "line": 2.5,
+        "odds": 1.6
+      }
+    ],
+    "away_rl_options": [
+      {
+        "line": -2.5,
+        "odds": 2.25
+      },
+      {
+        "line": -1.5,
+        "odds": 1.98
+      }
+    ],
+    "book_count": 25
+  },
+  "AZ_CWS": {
+    "home_ml": 1.65,
+    "away_ml": 2.25,
+    "home_rl": 2.38,
+    "away_rl": 1.69,
+    "home_rl_point": -1.5,
+    "away_rl_point": 1.5,
+    "home_no_vig": 0.5769,
+    "away_no_vig": 0.4231,
+    "home_rl_options": [
+      {
+        "line": -1.5,
+        "odds": 2.38
+      },
+      {
+        "line": -1.0,
+        "odds": 1.94
+      },
+      {
+        "line": 2.5,
+        "odds": 1.25
+      }
+    ],
+    "away_rl_options": [
+      {
+        "line": -2.5,
+        "odds": 3.75
+      },
+      {
+        "line": 1.0,
+        "odds": 1.87
+      },
+      {
+        "line": 1.5,
+        "odds": 1.69
+      }
+    ],
+    "book_count": 25
+  },
+  "SF_LAD": {
+    "home_ml": 2.75,
+    "away_ml": 1.45,
+    "home_rl": 2.1,
+    "away_rl": 1.87,
+    "home_rl_point": 1.5,
+    "away_rl_point": -1.5,
+    "home_no_vig": 0.3452,
+    "away_no_vig": 0.6548,
+    "home_rl_options": [
+      {
+        "line": 1.5,
+        "odds": 2.1
+      },
+      {
+        "line": 2.0,
+        "odds": 1.81
+      },
+      {
+        "line": 2.5,
+        "odds": 1.57
+      }
+    ],
+    "away_rl_options": [
+      {
+        "line": -2.5,
+        "odds": 2.3
+      },
+      {
+        "line": -2.0,
+        "odds": 2.02
+      },
+      {
+        "line": -1.5,
+        "odds": 1.87
+      }
+    ],
+    "book_count": 25
+  }
+}

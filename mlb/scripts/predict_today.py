@@ -20,6 +20,7 @@ import pickle
 import argparse
 import csv
 import os
+from itertools import combinations
 from pathlib import Path
 from collections import defaultdict, deque
 from datetime import date, datetime, timezone, timedelta
@@ -220,6 +221,7 @@ def fetch_upcoming(target_date: str) -> list[dict]:
                 {
                     "game_pk": g["gamePk"],
                     "game_date": target_date,
+                    "gameDate": g.get("gameDate"),
                     "series_game_number": g.get("seriesGameNumber"),
                     "games_in_series": g.get("gamesInSeries"),
                     "home_team_id": home["team"]["id"],
@@ -1036,6 +1038,16 @@ ACCA_TYPE_STAKES = {
     "6-Fold":  3.00,
 }
 ACCA_STAKE = 10.00  # legacy fallback
+ACCA_CORE_MAX = 6
+ACCA_TOTAL_MAX = 7
+ACCA_FUN_ENABLED = os.getenv("ACCA_FUN_ENABLED", "1").lower() in {"1", "true", "yes", "on"}
+ACCA_TYPE_LIMITS = {
+    "Double": 3,
+    "Treble": 3,
+    "Quad": 3,
+    "5-Fold": 2,
+    "6-Fold": 2,
+}
 
 
 def _best_acca_leg(row: dict) -> dict | None:
@@ -1090,23 +1102,25 @@ def _best_acca_leg(row: dict) -> dict | None:
         "pickSide": pick_side,
     }
 
-def build_accumulators(predictions: list[dict]) -> list[dict]:
+def _legacy_build_accumulators(predictions: list[dict]) -> list[dict]:
     """
-    Build a tiered suite of value-based accumulators from today's predictions.
+    Build a diversified suite of value-based accumulators from today's predictions.
 
     Framework:
     - Every leg must have genuine positive EV individually (edge ≥ 3%).
     - Larger combos (4+ legs) require every selected leg to clear 5% edge —
       no weak legs added just to boost combined odds.
+    - Each accumulator is selected as its own ticket, not as a nested ladder.
+    - Reused legs and repeated pairs are penalized to spread acca risk.
     - Combined EV is computed from the product of adjusted probabilities vs
       the combined market implied probability.
 
     Stakes:
-      Double  (top 2 legs, ≥3% each) — €10
-      Treble  (top 3 legs, ≥3% each) — €10
-      Quad    (top 4 legs, ≥5% each) — €7
-      5-Fold  (top 5 legs, ≥5% each) — €5
-      6-Fold  (top 6 legs, ≥5% each) — €3
+      Double  (2 legs, ≥3% each) — €10
+      Treble  (3 legs, ≥3% each) — €10
+      Quad    (4 legs, ≥5% each) — €7
+      5-Fold  (5 legs, ≥5% each) — €5
+      6-Fold  (6 legs, ≥5% each) — €3
 
     All legs use real API odds. Staking from ACCA_BANKROLL_EUR only.
     """
@@ -1144,13 +1158,83 @@ def build_accumulators(predictions: list[dict]) -> list[dict]:
             market_prob *= 1.0 / l["odds"]
         return round(true_prob / market_prob - 1, 4) if market_prob > 0 else 0.0
 
+    def _leg_key(leg: dict) -> str:
+        game_key = leg.get("gamePk") or leg.get("game") or ""
+        return f"{game_key}|{leg.get('label', '')}"
+
+    def _pair_keys(selection: list[dict]) -> set[tuple[str, str]]:
+        keys = sorted(_leg_key(l) for l in selection)
+        return {tuple(pair) for pair in combinations(keys, 2)}
+
+    def _select_diversified(pool: list[dict], n_legs: int, previous: list[dict]) -> list[dict] | None:
+        """
+        Pick one standalone accumulator from the qualified pool.
+
+        The score keeps quality high while penalizing concentrated exposure:
+        reused legs, repeated two-leg pairings, and containing a previous ticket.
+        """
+        if len(pool) < n_legs:
+            return None
+
+        usage = defaultdict(int)
+        used_pairs = set()
+        previous_sets = []
+        for acca in previous:
+            legs = acca["legs"]
+            keys = {_leg_key(l) for l in legs}
+            previous_sets.append(keys)
+            used_pairs.update(_pair_keys(legs))
+            for key in keys:
+                usage[key] += 1
+
+        candidates = []
+        standalone_candidates = []
+        for combo in combinations(pool, n_legs):
+            selection = list(combo)
+            keys = {_leg_key(l) for l in selection}
+            if len(keys) < n_legs:
+                continue
+
+            combo_pairs = _pair_keys(selection)
+            repeated_pairs = len(combo_pairs & used_pairs)
+            whole_ticket_overlap = max(
+                (len(keys & prev_keys) / max(1, min(len(keys), len(prev_keys))) for prev_keys in previous_sets),
+                default=0.0,
+            )
+            contains_previous_ticket = any(prev_keys and prev_keys.issubset(keys) for prev_keys in previous_sets)
+            reused_legs = sum(usage[key] for key in keys)
+            avg_edge = sum(l["edge"] for l in selection) / n_legs
+            min_edge = min(l["edge"] for l in selection)
+            combined_ev = _combined_ev(selection)
+
+            score = (
+                combined_ev
+                + avg_edge * 1.75
+                + min_edge * 0.75
+                - reused_legs * 0.16
+                - repeated_pairs * 0.22
+                - whole_ticket_overlap * 0.30
+                - (0.50 if contains_previous_ticket else 0.0)
+            )
+            candidate = (score, combined_ev, avg_edge, min_edge, -reused_legs, selection)
+            candidates.append(candidate)
+            if not contains_previous_ticket:
+                standalone_candidates.append(candidate)
+
+        candidates = standalone_candidates
+        if not candidates:
+            return None
+
+        candidates.sort(key=lambda item: item[:5], reverse=True)
+        return candidates[0][5]
+
     accas = []
 
-    # Double + Treble from best ≥3% legs
+    # Double + Treble from diversified >=3% combinations
     for type_name, n_legs, stake in [("Double", 2, 10.00), ("Treble", 3, 10.00)]:
-        if len(legs_3pct) < n_legs:
+        selection = _select_diversified(legs_3pct, n_legs, accas)
+        if selection is None:
             continue
-        selection = legs_3pct[:n_legs]
         combined  = _combined_odds(selection)
         accas.append({
             "type":             type_name,
@@ -1161,11 +1245,11 @@ def build_accumulators(predictions: list[dict]) -> list[dict]:
             "combined_ev":      _combined_ev(selection),
         })
 
-    # Quad / 5-Fold / 6-Fold from best ≥5% legs only
+    # Quad / 5-Fold / 6-Fold from diversified >=5% combinations only
     for type_name, n_legs, stake in [("Quad", 4, 7.00), ("5-Fold", 5, 5.00), ("6-Fold", 6, 3.00)]:
-        if len(legs_5pct) < n_legs:
+        selection = _select_diversified(legs_5pct, n_legs, accas)
+        if selection is None:
             continue
-        selection = legs_5pct[:n_legs]
         combined  = _combined_odds(selection)
         accas.append({
             "type":             type_name,
@@ -1179,7 +1263,420 @@ def build_accumulators(predictions: list[dict]) -> list[dict]:
     return accas
 
 
-def write_json_report(predictions: list[dict], target_date: str, accumulators: list[dict] | None = None) -> Path:
+def _is_pregame_row(row: dict) -> bool:
+    return row.get("gameStatus", "NOT_STARTED") not in {"LIVE", "FINAL"} and row.get("_gameState") not in {"LIVE", "FINAL"}
+
+
+def _valid_decimal_odds(value) -> bool:
+    return isinstance(value, (int, float)) and 1.01 <= float(value) <= 15.0
+
+
+def _selected_side_market(row: dict) -> tuple[str | None, str | None, float | None, float | None]:
+    pick_side = row.get("pickSide")
+    if not pick_side or pick_side == "none":
+        return None, None, None, None
+    abbr = row["homeAbbr"] if pick_side == "home" else row["awayAbbr"]
+    odds = row.get("homeMl") if pick_side == "home" else row.get("awayMl")
+    implied = row.get("homeNoVig") if pick_side == "home" else row.get("awayNoVig")
+    if implied is None and _valid_decimal_odds(odds):
+        implied = 1.0 / float(odds)
+    return pick_side, abbr, odds, implied
+
+
+def _risk_class(market: str, odds: float, edge: float, prob: float, line=None) -> str:
+    if market == "RL":
+        try:
+            point = float(line)
+        except (TypeError, ValueError):
+            point = None
+        if point is not None and point > 0 and prob >= 0.58:
+            return "Safe"
+        if point is not None and point < 0:
+            return "Aggressive" if odds >= 1.85 else "Balanced"
+    if prob >= 0.58 and odds <= 1.85:
+        return "Safe"
+    if odds >= 2.35 or prob < 0.52:
+        return "Aggressive"
+    return "Balanced"
+
+
+def score_acca_leg(leg: dict) -> dict:
+    edge = float(leg["edge"])
+    prob = float(leg["adjProb"])
+    odds = float(leg["odds"])
+    risk = _risk_class(leg["market"], odds, edge, prob, leg.get("line"))
+    edge_score = min(edge / 0.12, 1.35)
+    prob_score = min(max((prob - 0.50) / 0.14, 0.0), 1.2)
+    price_penalty = max(0.0, (odds - 2.50) * 0.08)
+    rl_bonus = 0.08 if leg["market"] == "RL" and risk in {"Safe", "Balanced"} else 0.0
+    risk_penalty = {"Safe": 0.0, "Balanced": 0.04, "Aggressive": 0.18}[risk]
+    score = round(edge_score * 0.50 + prob_score * 0.35 + rl_bonus - price_penalty - risk_penalty, 4)
+    if risk == "Safe" and edge >= 0.06 and prob >= 0.56:
+        tier = "A"
+    elif edge >= 0.07 and prob >= 0.53:
+        tier = "A"
+    elif edge >= 0.045 and prob >= 0.52:
+        tier = "B"
+    else:
+        tier = "C"
+    return {**leg, "leg_score": score, "tier": tier, "risk_class": risk}
+
+
+def build_acca_leg_pool(predictions: list[dict]) -> dict:
+    core, fun = [], []
+    for row in predictions:
+        if not _is_pregame_row(row):
+            continue
+        stake_eur = float(row.get("stake", {}).get("eur", 0.0) or 0.0)
+        row_edge = float(row.get("edge", 0.0) or 0.0)
+        is_bet = (
+            stake_eur > 0
+            and row_edge >= 0.01
+            and row.get("hasOdds") is True
+            and row.get("homeSpName") != "TBD"
+            and row.get("awaySpName") != "TBD"
+        )
+        pick_side, abbr, ml_odds, ml_implied = _selected_side_market(row)
+        if not pick_side:
+            continue
+
+        game = f'{row["awayAbbr"]} @ {row["homeAbbr"]}'
+        model_prob = float(row.get("modelProb", 0.0) or 0.0)
+        if _valid_decimal_odds(ml_odds) and ml_implied is not None:
+            ml_edge = round(model_prob - float(ml_implied), 4)
+            ml_leg = {
+                "id": f'{row.get("gamePk", "")}|ML|{pick_side}',
+                "gamePk": str(row.get("gamePk", "")),
+                "game": game,
+                "label": f"{abbr} ML",
+                "odds": round(float(ml_odds), 2),
+                "edge": ml_edge,
+                "adjProb": round(model_prob, 4),
+                "impliedProb": round(float(ml_implied), 4),
+                "market": "ML",
+                "line": "ml",
+                "pickSide": pick_side,
+                "source": "model_moneyline",
+            }
+            scored = score_acca_leg(ml_leg)
+            if is_bet and ml_edge >= 0.03 and model_prob >= 0.50:
+                core.append(scored)
+            if ml_edge >= 0.015 and model_prob >= 0.48:
+                fun.append({**scored, "fun_reason": "priced ML with model support"})
+
+        rl_edge = row.get("spreadBestEdge")
+        rl_prob = row.get("spreadBestCoverProb")
+        rl_odds = row.get("spreadBestOdds")
+        rl_point = row.get("spreadBestPoint")
+        spread_ok = row.get("spreadSelectionAllowed") is True or row.get("spreadModelValidationPassed") is True
+        if spread_ok and _valid_decimal_odds(rl_odds) and rl_edge is not None and rl_prob is not None:
+            rl_edge = float(rl_edge)
+            rl_prob = float(rl_prob)
+            rl_odds = float(rl_odds)
+            rl_label_point = f"{float(rl_point):+g}" if rl_point is not None else "-1.5"
+            rl_leg = {
+                "id": f'{row.get("gamePk", "")}|RL|{pick_side}|{rl_label_point}',
+                "gamePk": str(row.get("gamePk", "")),
+                "game": game,
+                "label": f"{abbr} {rl_label_point}",
+                "odds": round(rl_odds, 2),
+                "edge": round(rl_edge, 4),
+                "adjProb": round(rl_prob, 4),
+                "impliedProb": round(1.0 / rl_odds, 4),
+                "market": "RL",
+                "line": rl_label_point,
+                "pickSide": pick_side,
+                "source": "validated_run_line_model",
+            }
+            scored = score_acca_leg(rl_leg)
+            if is_bet and rl_edge >= 0.035 and rl_prob >= 0.52:
+                core.append(scored)
+            if rl_edge >= 0.02 and rl_prob >= 0.49:
+                fun.append({**scored, "fun_reason": "spicy validated run-line angle"})
+
+    def dedupe_best(legs: list[dict]) -> list[dict]:
+        best = {}
+        for leg in legs:
+            if leg["id"] not in best or leg["leg_score"] > best[leg["id"]]["leg_score"]:
+                best[leg["id"]] = leg
+        return sorted(best.values(), key=lambda l: (l["leg_score"], l["edge"]), reverse=True)
+
+    return {"core": dedupe_best(core), "fun": dedupe_best(fun)}
+
+
+def _combined_metrics(legs: list[dict]) -> dict:
+    combined_odds = 1.0
+    model_prob = 1.0
+    implied_prob = 1.0
+    for leg in legs:
+        combined_odds *= float(leg["odds"])
+        model_prob *= float(leg["adjProb"])
+        implied_prob *= float(leg.get("impliedProb", 1.0 / leg["odds"]))
+    ev = (model_prob / implied_prob - 1.0) if implied_prob > 0 else 0.0
+    return {
+        "combined_odds": round(combined_odds, 2),
+        "combined_model_probability": round(model_prob, 4),
+        "combined_implied_probability": round(implied_prob, 4),
+        "combined_ev": round(ev, 4),
+    }
+
+
+def _ticket_type(n_legs: int) -> str:
+    return {2: "Double", 3: "Treble", 4: "Quad", 5: "5-Fold", 6: "6-Fold"}[n_legs]
+
+
+def _leg_public(leg: dict) -> dict:
+    return {
+        "gamePk": leg["gamePk"],
+        "game": leg["game"],
+        "label": leg["label"],
+        "odds": leg["odds"],
+        "edge": leg["edge"],
+        "adjProb": leg["adjProb"],
+        "impliedProb": leg["impliedProb"],
+        "line": leg["line"],
+        "pickSide": leg["pickSide"],
+        "market": leg["market"],
+        "tier": leg["tier"],
+        "risk_class": leg["risk_class"],
+        "leg_score": leg["leg_score"],
+        "source": leg["source"],
+    }
+
+
+def score_acca_candidate(legs: list[dict], selected: list[dict] | None = None) -> dict | None:
+    n_legs = len(legs)
+    if len({leg["gamePk"] for leg in legs}) != n_legs:
+        return None
+    aggressive = sum(1 for leg in legs if leg["risk_class"] == "Aggressive")
+    tier_a = sum(1 for leg in legs if leg["tier"] == "A")
+    tier_c = sum(1 for leg in legs if leg["tier"] == "C")
+    if n_legs == 2 and aggressive > 1:
+        return None
+    if n_legs == 3 and (tier_a < 1 or aggressive > 1):
+        return None
+    if n_legs >= 4 and (aggressive > 1 or tier_c > 0 or tier_a < 1):
+        return None
+
+    metrics = _combined_metrics(legs)
+    if metrics["combined_model_probability"] <= metrics["combined_implied_probability"]:
+        return None
+
+    avg_score = sum(leg["leg_score"] for leg in legs) / n_legs
+    min_score = min(leg["leg_score"] for leg in legs)
+    safety_points = sum({"Safe": 1.0, "Balanced": 0.55, "Aggressive": -0.45}[leg["risk_class"]] for leg in legs) / n_legs
+    length_penalty = max(0, n_legs - 3) * 0.10
+    ev_signal = min(max(metrics["combined_ev"], 0.0), 1.0)
+    score = avg_score * 0.38 + min_score * 0.22 + ev_signal * 0.20 + metrics["combined_model_probability"] * 0.15 + safety_points * 0.18 - length_penalty
+
+    max_overlap = 0.0
+    repeated_legs = 0
+    if selected:
+        keys = {leg["id"] for leg in legs}
+        for acca in selected:
+            other = {leg.get("id") for leg in acca["_legs_internal"]}
+            overlap = len(keys & other) / max(1, min(len(keys), len(other)))
+            max_overlap = max(max_overlap, overlap)
+            repeated_legs += len(keys & other)
+        score -= max_overlap * 0.20 + repeated_legs * 0.035
+
+    safety_rating = "Safe" if aggressive == 0 and safety_points >= 0.75 else "Balanced" if aggressive <= 1 else "Aggressive"
+    return {
+        "type": _ticket_type(n_legs),
+        "legs": [_leg_public(leg) for leg in legs],
+        "_legs_internal": legs,
+        "score": round(score, 4),
+        "safety_rating": safety_rating,
+        "aggressive_leg_count": aggressive,
+        "tier_a_leg_count": tier_a,
+        "overlap_metadata": {
+            "max_selected_overlap": round(max_overlap, 4),
+            "repeated_leg_count": repeated_legs,
+        },
+        **metrics,
+    }
+
+
+def generate_acca_candidates(legs: list[dict]) -> list[dict]:
+    candidates = []
+    for n_legs in range(2, 7):
+        if len(legs) < n_legs:
+            continue
+        for combo in combinations(legs[:14], n_legs):
+            candidate = score_acca_candidate(list(combo))
+            if candidate:
+                candidates.append(candidate)
+    candidates.sort(key=lambda c: (c["score"], c["combined_ev"], c["combined_model_probability"]), reverse=True)
+    return candidates[:120]
+
+
+def _leg_use_limit(leg: dict) -> int:
+    return 3 if leg["tier"] == "A" else 2 if leg["tier"] == "B" else 1
+
+
+def _ticket_key(acca: dict) -> tuple[str, ...]:
+    return tuple(sorted(leg["id"] for leg in acca["_legs_internal"]))
+
+
+def _portfolio_metrics(accas: list[dict]) -> dict:
+    exposure = defaultdict(int)
+    labels = {}
+    for acca in accas:
+        for leg in acca["_legs_internal"]:
+            exposure[leg["id"]] += 1
+            labels[leg["id"]] = leg["label"]
+    total_leg_slots = sum(len(acca["_legs_internal"]) for acca in accas)
+    pair_overlaps = []
+    for a, b in combinations(accas, 2):
+        ak = {leg["id"] for leg in a["_legs_internal"]}
+        bk = {leg["id"] for leg in b["_legs_internal"]}
+        pair_overlaps.append(len(ak & bk) / max(1, min(len(ak), len(bk))))
+    return {
+        "total_core_accas": len(accas),
+        "total_unique_legs_used": len(exposure),
+        "per_leg_exposure_count": {labels[k]: v for k, v in sorted(exposure.items(), key=lambda item: (-item[1], labels[item[0]]))},
+        "concentration_score": round(max(exposure.values(), default=0) / max(1, total_leg_slots), 4),
+        "overlap_score": round(sum(pair_overlaps) / len(pair_overlaps), 4) if pair_overlaps else 0.0,
+    }
+
+
+def _finalize_acca(acca: dict, stake: float, bucket: str, label: str | None = None, reason: str | None = None) -> dict:
+    public = {k: v for k, v in acca.items() if k != "_legs_internal"}
+    public["stake"] = stake
+    public["potential_return"] = round(stake * public["combined_odds"], 2)
+    public["bucket"] = bucket
+    if label:
+        public["label"] = label
+    if reason:
+        public["reason"] = reason
+    return public
+
+
+def select_core_acca_portfolio(candidates: list[dict]) -> list[dict]:
+    selected = []
+    seen = set()
+    exposure = defaultdict(int)
+    type_counts = defaultdict(int)
+    for base in candidates:
+        if len(selected) >= ACCA_CORE_MAX:
+            break
+        key = _ticket_key(base)
+        if key in seen:
+            continue
+        n_legs = len(base["_legs_internal"])
+        if type_counts[base["type"]] >= ACCA_TYPE_LIMITS.get(base["type"], 1):
+            continue
+        if n_legs >= 5 and base["safety_rating"] != "Safe":
+            continue
+        if any(exposure[leg["id"]] >= _leg_use_limit(leg) for leg in base["_legs_internal"]):
+            continue
+        rescored = score_acca_candidate(base["_legs_internal"], selected)
+        if not rescored or rescored["score"] < 0.28:
+            continue
+        if rescored["overlap_metadata"]["max_selected_overlap"] > 0.80:
+            continue
+        selected.append(rescored)
+        seen.add(key)
+        type_counts[rescored["type"]] += 1
+        for leg in rescored["_legs_internal"]:
+            exposure[leg["id"]] += 1
+    if len(selected) > 4:
+        metrics = _portfolio_metrics(selected)
+        if metrics["concentration_score"] > 0.34 or metrics["overlap_score"] > 0.52:
+            selected = selected[:4]
+    return selected
+
+
+def build_optional_fun_acca(fun_legs: list[dict], core_accas: list[dict]) -> dict | None:
+    if not ACCA_FUN_ENABLED or len(fun_legs) < 3 or len(core_accas) >= ACCA_TOTAL_MAX:
+        return None
+    core_keys = {leg["id"] for acca in core_accas for leg in acca["_legs_internal"]}
+    core_type_counts = defaultdict(int)
+    for acca in core_accas:
+        core_type_counts[acca["type"]] += 1
+    dominant_core_type = max(core_type_counts, key=core_type_counts.get, default=None)
+
+    spicy = sorted(fun_legs, key=lambda leg: (leg["risk_class"] == "Aggressive", leg["odds"], leg["edge"], leg["leg_score"]), reverse=True)
+    candidates = []
+    preferred_lengths = (4, 5, 3) if dominant_core_type == "Treble" and core_type_counts[dominant_core_type] >= 3 else (3, 4, 5)
+    for n_legs in preferred_lengths:
+        if len(spicy) < n_legs:
+            continue
+        for combo in combinations(spicy[:12], n_legs):
+            if len({leg["gamePk"] for leg in combo}) != n_legs:
+                continue
+            aggressive = sum(1 for leg in combo if leg["risk_class"] == "Aggressive")
+            if aggressive < 1 or aggressive > 2:
+                continue
+            candidate = score_acca_candidate(list(combo), core_accas)
+            if not candidate:
+                continue
+            overlap_core = sum(1 for leg in combo if leg["id"] in core_keys)
+            max_overlap = candidate["overlap_metadata"]["max_selected_overlap"]
+            type_is_different = candidate["type"] != dominant_core_type
+            has_new_leg = overlap_core < n_legs
+            has_spicy_mix = aggressive >= 2 or any(leg["odds"] >= 2.35 for leg in combo)
+            meaningfully_different = (
+                max_overlap <= 0.67
+                and has_new_leg
+                and (type_is_different or has_spicy_mix)
+            )
+            if not meaningfully_different:
+                continue
+            structure_bonus = 0.16 if type_is_different else 0.0
+            long_fun_bonus = 0.08 if n_legs >= 4 and dominant_core_type == "Treble" else 0.0
+            candidate["score"] = round(
+                candidate["score"]
+                + aggressive * 0.08
+                + min(candidate["combined_odds"], 20.0) * 0.006
+                + structure_bonus
+                + long_fun_bonus
+                - overlap_core * 0.08,
+                4,
+            )
+            candidates.append(candidate)
+    if not candidates:
+        return None
+    candidates.sort(key=lambda c: (c["score"], c["combined_odds"]), reverse=True)
+    fun = _finalize_acca(
+        candidates[0],
+        ACCA_TYPE_STAKES.get(candidates[0]["type"], ACCA_STAKE),
+        "fun",
+        label="Fun Acca",
+        reason="Entertainment/high-variance side ticket with a different shape or leg mix from the core portfolio.",
+    )
+    fun["type"] = f"Fun Acca ({fun['type']})"
+    fun["non_core"] = True
+    return fun
+
+
+def build_accumulator_portfolio(predictions: list[dict]) -> dict:
+    pools = build_acca_leg_pool(predictions)
+    candidates = generate_acca_candidates(pools["core"])
+    core_internal = select_core_acca_portfolio(candidates)
+    core = [_finalize_acca(acca, ACCA_TYPE_STAKES.get(acca["type"], ACCA_STAKE), "core") for acca in core_internal]
+    fun = build_optional_fun_acca(pools["fun"], core_internal)
+    summary = _portfolio_metrics(core_internal)
+    summary.update({
+        "fun_acca_exists": fun is not None,
+        "core_leg_pool_size": len(pools["core"]),
+        "fun_leg_pool_size": len(pools["fun"]),
+        "candidate_count": len(candidates),
+        "max_core_accas": ACCA_CORE_MAX,
+        "max_total_accas": ACCA_TOTAL_MAX,
+    })
+    return {"core": core, "fun": fun, "summary": summary}
+
+
+def build_accumulators(predictions: list[dict]) -> list[dict]:
+    portfolio = build_accumulator_portfolio(predictions)
+    accas = list(portfolio["core"])
+    if portfolio.get("fun"):
+        accas.append(portfolio["fun"])
+    return accas
+
+
+def write_json_report(predictions: list[dict], target_date: str, accumulators: list[dict] | None = None, acca_portfolio: dict | None = None) -> Path:
     month_folder, day_folder, file_stub = format_prediction_date(target_date)
     out_dir = PREDICTIONS_DIR / month_folder / day_folder
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -1193,6 +1690,7 @@ def write_json_report(predictions: list[dict], target_date: str, accumulators: l
         "regenerated": os.getenv("PREDICTION_REGENERATED", "").lower() in {"1", "true", "yes", "on"},
         "predictions": predictions,
         "accumulators": accumulators or [],
+        "accaPortfolio": acca_portfolio or {"core": accumulators or [], "fun": None, "summary": {}},
     }
     out_file.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return out_file
@@ -2039,6 +2537,7 @@ if __name__ == "__main__":
         row = {
             "gamePk": g["game_pk"],
             "gameStatus": "LIVE" if g.get("isLive") else "NOT_STARTED",
+            "gameDate": g.get("gameDate"),
             "homeTeam": g["home_name"],
             "awayTeam": g["away_name"],
             "homeAbbr": g["home_team"],
@@ -2130,10 +2629,13 @@ if __name__ == "__main__":
         output[str(g["game_pk"])] = row
         report_rows.append(row)
 
-    accumulators      = build_accumulators(report_rows)
+    acca_portfolio    = build_accumulator_portfolio(report_rows)
+    accumulators      = list(acca_portfolio["core"])
+    if acca_portfolio.get("fun"):
+        accumulators.append(acca_portfolio["fun"])
     md_report_path    = write_markdown_report(report_rows, today, bankroll=BANKROLL_EUR, odds_fetched_at=odds_fetched_at, accumulators=accumulators)
     excel_report_path = write_excel_report(report_rows, today, bankroll=BANKROLL_EUR)
-    json_report_path  = write_json_report(report_rows, today, accumulators=accumulators)
+    json_report_path  = write_json_report(report_rows, today, accumulators=accumulators, acca_portfolio=acca_portfolio)
     print(f"// Markdown report written to {md_report_path}", file=sys.stderr)
     print(f"// Excel report written to {excel_report_path}", file=sys.stderr)
     print(f"// JSON report written to {json_report_path}", file=sys.stderr)

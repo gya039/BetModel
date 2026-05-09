@@ -9,45 +9,65 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
+from datetime import date, datetime
 from bs4 import BeautifulSoup
 from utils import fetch_html, save_json, DATA_RAW, get_logger
 
 log = get_logger("fetch_card")
 
-UPCOMING_URL    = "http://ufcstats.com/statistics/events/upcoming?page=all"
-# Keywords that identify the target event (lower-case, both must appear)
-TARGET_KEYWORDS = ["sterling", "zalal"]
+UPCOMING_URL = "http://ufcstats.com/statistics/events/upcoming?page=all"
 
 
 # ── event discovery ───────────────────────────────────────────────────────────
 
 def _find_target_event(soup: BeautifulSoup) -> dict:
     """
-    Walk the upcoming-events table and return the first row whose event name
-    contains all TARGET_KEYWORDS.  Falls back to the very first listed event
-    so the pipeline never hard-stops when the card isn't posted yet.
+    Walk the upcoming-events table and return the first event that is today or
+    in the future, so the pipeline always auto-advances to the next card.
+    Falls back to the very first listed row if date parsing fails for all rows.
     """
-    # ufcstats uses two possible row selectors; try both
     rows = soup.select("tr.b-statistics__table-events_row")
     if not rows:
         rows = soup.select("table.b-statistics__table-events tbody tr")
 
+    today = date.today()
     first_fallback = None
+
     for row in rows:
         link = row.find("a")
         if not link or not link.get("href"):
             continue
         name = link.get_text(strip=True)
         href = link["href"].strip()
+
         if not first_fallback:
             first_fallback = {"name": name, "url": href}
-        if all(kw in name.lower() for kw in TARGET_KEYWORDS):
-            log.info("Matched target event: %s", name)
+
+        # Try to read the date column (second <td> on upcoming-events rows)
+        tds = row.find_all("td")
+        event_date = None
+        for td in tds:
+            txt = td.get_text(strip=True)
+            for fmt in ("%B %d, %Y", "%b %d, %Y"):
+                try:
+                    event_date = datetime.strptime(txt, fmt).date()
+                    break
+                except ValueError:
+                    continue
+            if event_date:
+                break
+
+        if event_date and event_date >= today:
+            log.info("Auto-selected next upcoming event: %s (%s)", name, event_date)
+            return {"name": name, "url": href}
+        elif event_date is None:
+            # No date parsed — treat as future (safe fallback)
+            log.info("No date found for %s — selecting as candidate", name)
             return {"name": name, "url": href}
 
     if first_fallback:
-        log.warning("Target keywords %s not found — using first upcoming: %s",
-                    TARGET_KEYWORDS, first_fallback["name"])
+        log.warning("Could not parse event dates — using first listed: %s",
+                    first_fallback["name"])
         return first_fallback
 
     raise RuntimeError("No upcoming events found on ufcstats.com.")

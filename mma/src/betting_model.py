@@ -375,30 +375,128 @@ def generate_card_betting(odds_path: Path | None = None) -> list[dict]:
     return analyses
 
 
+def _event_meta() -> dict:
+    """Return slug + card metadata from card.json for archive labelling."""
+    import re
+    try:
+        card = load_json(DATA_RAW / "card.json")
+        name     = card.get("event_name", "")
+        date_str = card.get("event_date", "")
+        url      = card.get("event_url", "")
+        from datetime import datetime as _dt
+        try:
+            date_slug = _dt.strptime(date_str, "%B %d, %Y").strftime("%Y-%m-%d")
+        except ValueError:
+            date_slug = date_str.replace(" ", "-").replace(",", "")
+        short = name.split(":")[-1].strip() if ":" in name else name
+        short = re.sub(r"[^\w\s-]", "", short).strip()
+        short = re.sub(r"\s+", "-", short).lower()[:40]
+        return {
+            "slug":        f"{date_slug}_{short}",
+            "event_name":  name,
+            "event_date":  date_str,
+            "event_url":   url,
+        }
+    except Exception:
+        from datetime import datetime as _dt
+        return {"slug": _dt.utcnow().strftime("%Y-%m-%dT%H%M%SZ"),
+                "event_name": "", "event_date": "", "event_url": ""}
+
+
 def save_outputs(analyses: list[dict]) -> None:
-    BETTING_DIR.mkdir(parents=True, exist_ok=True)
-    save_json(analyses, EDGES_JSON)
-    rows = [row for fight in analyses for row in fight["markets"]]
-    fieldnames = [
-        "fight",
-        "market",
-        "selection",
-        "sportsbook",
-        "odds",
-        "decimal_odds",
-        "implied_probability",
-        "model_probability",
-        "edge",
-        "confidence",
-        "label",
-        "rationale",
-    ]
-    with EDGES_CSV.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames)
-        writer.writeheader()
-        for row in rows:
-            writer.writerow({field: row.get(field, "") for field in fieldnames})
-    save_staking_plan(build_staking_plan(analyses))
+    from ledger import (
+        blocks_new_generation,
+        register_event,
+        place_bets,
+        pipeline_lock,
+    )
+
+    meta = _event_meta()
+
+    # ── Concurrency guard: wrap entire generation in a pipeline lock ───────────
+    with pipeline_lock("generate_card", ttl_seconds=600):
+
+        # ── State guard: block if a different event has unresolved bets ───────
+        blocked, blocker = blocks_new_generation(meta["event_url"])
+        if blocked:
+            name = blocker.get("event_name", "unknown") if blocker else "unknown"
+            eid  = blocker.get("event_id", "")           if blocker else ""
+            raise RuntimeError(
+                f"\n\n  ⛔  UNRESOLVED EVENT BLOCKING GENERATION\n"
+                f"  Event  : {name}  (status: {blocker.get('status','?')})\n"
+                f"  Settle : http://localhost:5002/settle/{eid}\n\n"
+                f"  Settle or archive the previous card first.\n"
+            )
+
+        BETTING_DIR.mkdir(parents=True, exist_ok=True)
+        save_json(analyses, EDGES_JSON)
+        rows = [row for fight in analyses for row in fight["markets"]]
+        fieldnames = [
+            "fight", "market", "selection", "sportsbook", "odds", "decimal_odds",
+            "implied_probability", "model_probability", "edge", "confidence",
+            "label", "rationale",
+        ]
+        with EDGES_CSV.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=fieldnames)
+            writer.writeheader()
+            for row in rows:
+                writer.writerow({field: row.get(field, "") for field in fieldnames})
+
+        slug = meta["slug"]
+        plan = build_staking_plan(analyses)
+        plan["event_name"] = meta["event_name"]
+        plan["event_date"] = meta["event_date"]
+        plan["event_url"]  = meta["event_url"]
+        save_staking_plan(plan)
+
+        # Archive event-stamped copies so prior picks survive the next pipeline run
+        archive_edges = BETTING_DIR / f"betting_edges_{slug}.json"
+        archive_plan  = BETTING_DIR / f"staking_plan_{slug}.json"
+        save_json(analyses, archive_edges)
+        save_json(plan, archive_plan)
+        print(f"Archived: {archive_edges.name}")
+        print(f"Archived: {archive_plan.name}")
+
+        # ── Persist event + bets to the ledger ──────────────────────────────
+        try:
+            card_raw = None
+            try:
+                card_raw = load_json(DATA_RAW / "card.json")
+            except Exception:
+                pass
+
+            event_id = register_event(
+                event_name=meta["event_name"],
+                event_date=meta["event_date"],
+                event_url=meta["event_url"],
+                card_json=card_raw,
+                edges_json=analyses,
+            )
+
+            # Stamp each single with its deterministic bet_id so staking_plan.json
+            # is auditable against the ledger without being a runtime dependency.
+            from ledger import _bet_id as _mk_bid
+            for pick in plan.get("singles", []):
+                pick["bet_id"] = _mk_bid(
+                    event_id,
+                    pick.get("fight_id"),
+                    pick.get("market", ""),
+                    pick.get("selection", ""),
+                )
+            save_staking_plan(plan)
+
+            placed = place_bets(
+                event_id=event_id,
+                singles=plan.get("singles", []),
+                accumulators=plan.get("accumulators", []),
+                bankroll=plan.get("bankroll", 500.0),
+            )
+            print(f"Ledger: registered event '{meta['event_name']}' ({event_id})")
+            print(f"Ledger: placed {len(placed)} bet(s) as pending")
+        except RuntimeError:
+            raise
+        except Exception as exc:
+            print(f"[WARN] Ledger write failed (non-fatal): {exc}")
 
 
 def main() -> None:

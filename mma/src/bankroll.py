@@ -18,12 +18,18 @@ BET_HISTORY_CSV = BETTING_DIR / "bet_history.csv"
 
 
 def current_bankroll() -> float:
-    """Use settled bet history if present, otherwise start at EUR 500."""
+    """Live bankroll: ledger DB is authoritative; CSV is the fallback."""
+    try:
+        from ledger import current_bankroll_from_db
+        return current_bankroll_from_db()
+    except Exception:
+        pass
+    # Legacy CSV fallback (pre-ledger data or DB unavailable)
     if not BET_HISTORY_CSV.exists():
         return BASE_BANKROLL
     with BET_HISTORY_CSV.open("r", encoding="utf-8", newline="") as handle:
         rows = list(csv.DictReader(handle))
-    settled = [row for row in rows if row.get("result") in {"Win", "Loss", "Push"} and row.get("bankroll_after")]
+    settled = [r for r in rows if r.get("result") in {"Win", "Loss", "Push"} and r.get("bankroll_after")]
     if not settled:
         return BASE_BANKROLL
     try:

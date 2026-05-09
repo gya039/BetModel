@@ -4,6 +4,22 @@ import { decisionForRow, pickLabel, stakeLabel, skipReason, edgeTier } from '../
 import { deriveConfidence, deriveReason, betterPitcherSide, formSegments } from '../utils/deriveStats'
 import { fmtMoney, fmtNumber, fmtPercent, fmtSignedMoney, safeText, toFiniteNumber } from '../utils/format'
 
+
+function formatGameTime(value) {
+  if (!value) return null
+
+  const dt = new Date(value)
+  if (Number.isNaN(dt.getTime())) return null
+
+  return new Intl.DateTimeFormat('en-GB', {
+    weekday: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    timeZone: 'Europe/Dublin',
+  }).format(dt)
+}
+
 export default function PickCard({ game, defaultExpanded }) {
   const decision = decisionForRow(game)
   const label = pickLabel(game)
@@ -23,6 +39,7 @@ export default function PickCard({ game, defaultExpanded }) {
   const settledResultKey = settledResult ? String(settledResult).toLowerCase() : null
   const displayStatus = settledResult ? String(settledResult).toUpperCase() : isLive ? 'LIVE' : isFinal ? 'FINAL' : decision
   const pickedSide = game.pickSide
+  const gameTime = formatGameTime(game.gameDate)
 
   const [expanded, setExpanded] = useState(defaultExpanded ?? false)
 
@@ -65,6 +82,10 @@ export default function PickCard({ game, defaultExpanded }) {
                 ? `Game ${game.seriesGameNumber} of ${game.gamesInSeries || '—'} · ${safeText(game.homeTeam)} vs ${safeText(game.awayTeam)}`
                 : `${safeText(game.awayTeam)} at ${safeText(game.homeTeam)}`}
             </div>
+
+            {!isLive && !isFinal && gameTime && (
+              <div className="pick-card__time">🕒{gameTime}</div>
+            )}
           </div>
 
           <div className="pick-card__badges">

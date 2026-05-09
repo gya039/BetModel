@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { usePredictions } from '../hooks/usePredictions'
 import { useResults } from '../hooks/useResults'
+import { useLiveScores } from '../hooks/useLiveScores'
 import { decisionForRow } from '../utils/decisions'
 import { todayStr, prevDate, nextDate, isFuture, formatDisplayDate, findLatestDate } from '../utils/paths'
 import { fmtMoney, fmtPercent, fmtSignedMoney, toFiniteNumber } from '../utils/format'
@@ -19,13 +20,19 @@ export default function TodayView({ onBankrollLoaded, initialDate }) {
 
   const { data, loading, error } = usePredictions(date)
   const { results } = useResults()
+  const liveStatuses = useLiveScores(date)
   const selectedData = oddsView === 'updated' && data?.updated ? data.updated : data?.current
   const hasUpdated = Boolean(data?.updated)
 
   useEffect(() => {
     let cancelled = false
-    if (initialDate) { setDate(initialDate); return }
-    findLatestDate().then(d => { if (!cancelled) setDate(d) })
+    if (initialDate) {
+      setDate(initialDate)
+      return
+    }
+    findLatestDate().then(d => {
+      if (!cancelled) setDate(d)
+    })
     return () => { cancelled = true }
   }, [initialDate])
 
@@ -45,28 +52,54 @@ export default function TodayView({ onBankrollLoaded, initialDate }) {
   }, [results, date])
 
   const predictions = useMemo(() => {
+    const games = liveStatuses?.games
     return (selectedData?.predictions ?? []).map(game => {
       const settled = settledByGame.get(String(game.gamePk))
-      if (!settled) return game
+      const live = games?.[String(game.gamePk)]
+
+      let merged = { ...game }
+
+      if (live) {
+        merged.gameStatus = live.gameStatus || game.gameStatus
+        merged.detailedState = live.detailedState || game.detailedState
+        if (live.gameStatus === 'FINAL') {
+          merged.finalScore = { away: live.awayScore, home: live.homeScore }
+        }
+        if (live.gameStatus === 'LIVE') {
+          merged.liveScore = {
+            away: live.awayScore,
+            home: live.homeScore,
+            inning: live.currentInning,
+            half: live.inningHalf,
+            detail: live.detailedState,
+          }
+        }
+      }
+
+      if (!settled) return merged
       return {
-        ...game,
-        gameStatus: game.gameStatus === 'LIVE' ? 'LIVE' : 'FINAL',
+        ...merged,
+        gameStatus: merged.gameStatus === 'LIVE' ? 'LIVE' : 'FINAL',
         settledResult: settled.result,
         settledPnl: settled.profit_loss,
         settledStake: settled.stake_eur,
         settledOdds: settled.odds,
       }
     })
-  }, [selectedData?.predictions, settledByGame])
+  }, [selectedData?.predictions, settledByGame, liveStatuses])
 
   const placedBets = predictions.filter(g => decisionForRow(g) === 'BET')
   const bets = placedBets.filter(g => !['LIVE', 'FINAL'].includes(g.gameStatus) && !g.settledResult)
   const live = placedBets.filter(g => g.gameStatus === 'LIVE')
   const finals = placedBets.filter(g => g.gameStatus === 'FINAL' || g.settledResult)
+  const activeBets = useMemo(
+    () => [...live, ...bets].sort(compareActiveBetsByStateAndTime),
+    [live, bets]
+  )
 
   const totalStaked = placedBets.reduce((s, g) => s + (toFiniteNumber(g.stake?.eur) || 0), 0)
   const totalProfit = placedBets.reduce((s, g) => s + (toFiniteNumber(g.settledPnl) || 0), 0)
-  const hasSettled  = placedBets.some(g => g.settledResult)
+  const hasSettled = placedBets.some(g => g.settledResult)
   const accums = selectedData?.accumulators ?? []
   const rlDiagnostics = useMemo(() => buildRlDiagnostics(predictions), [predictions])
 
@@ -76,7 +109,7 @@ export default function TodayView({ onBankrollLoaded, initialDate }) {
   }
 
   return (
-    <div>
+    <div className="de-page-skin de-page-skin--picks">
       <DateNav
         date={date}
         onPrev={() => setDate(prevDate(date))}
@@ -85,9 +118,15 @@ export default function TodayView({ onBankrollLoaded, initialDate }) {
       />
 
       {selectedData && (
-        <div className="de-hero">
-          <div className="de-hero__date-label">Today's Slate</div>
-          <div className="de-hero__date">{formatDisplayDate(date)}</div>
+        <div className="de-hero de-hero--picks">
+          <div className="de-hero__copy">
+            <div className="de-hero__date-label">Today's Slate</div>
+            <div className="de-hero__date">{formatDisplayDate(date)}</div>
+            <div className="de-hero__lede">
+              Early board, edge-qualified picks, and live status in one sweep.
+            </div>
+          </div>
+
           {hasUpdated && (
             <div className="de-segmented de-odds-toggle" aria-label="Odds snapshot">
               <button
@@ -104,11 +143,13 @@ export default function TodayView({ onBankrollLoaded, initialDate }) {
               </button>
             </div>
           )}
+
           {(selectedData.regenerated || selectedData.snapshotKind === 'regenerated') && (
             <div className="de-snapshot-warning">
               Current file was regenerated after the morning odds lock
             </div>
           )}
+
           <div className="de-hero__stats">
             <div className="de-hero__stat">
               <div className="de-hero__stat-label">Bets</div>
@@ -117,7 +158,7 @@ export default function TodayView({ onBankrollLoaded, initialDate }) {
             </div>
             <div className="de-hero__stat">
               <div className="de-hero__stat-label">Staked</div>
-              <div className="de-hero__stat-value gold">{totalStaked > 0 ? fmtMoney(totalStaked) : '—'}</div>
+              <div className="de-hero__stat-value blue">{totalStaked > 0 ? fmtMoney(totalStaked) : '—'}</div>
             </div>
             <div className={`de-hero__stat${hasSettled ? totalProfit >= 0 ? ' de-hero__stat--pos' : ' de-hero__stat--neg' : ''}`}>
               <div className="de-hero__stat-label">Profit</div>
@@ -147,33 +188,16 @@ export default function TodayView({ onBankrollLoaded, initialDate }) {
 
       {!loading && !error && (
         <>
-          {bets.length > 0 && (
+          {activeBets.length > 0 && (
             <div className="de-section de-picks-section">
               <div className="de-section-header">
                 <div className="de-section-header__dot" style={{ background: 'var(--bet)' }} />
                 <span className="de-section-header__title">Today's Picks</span>
-                <span className="de-section-header__count">{bets.length}</span>
+                <span className="de-section-header__count">{activeBets.length}</span>
               </div>
               {rlDiagnostics && <RlDiagnosticPanel diag={rlDiagnostics} />}
               <div className="de-pick-grid">
-                {bets
-                  .sort((a, b) => (toFiniteNumber(b.edge) || 0) - (toFiniteNumber(a.edge) || 0))
-                  .map(game => (
-                    <PickCard key={game.gamePk} game={game} defaultExpanded={false} />
-                  ))}
-              </div>
-            </div>
-          )}
-
-          {live.length > 0 && (
-            <div className="de-section">
-              <div className="de-section-header">
-                <div className="de-section-header__dot" style={{ background: 'var(--live)', animation: 'dotPulse 1.2s ease-in-out infinite' }} />
-                <span className="de-section-header__title">In Play</span>
-                <span className="de-section-header__count">{live.length}</span>
-              </div>
-              <div className="de-pick-grid">
-                {live.map(game => (
+                {activeBets.map(game => (
                   <PickCard key={game.gamePk} game={game} defaultExpanded={false} />
                 ))}
               </div>
@@ -222,7 +246,7 @@ export default function TodayView({ onBankrollLoaded, initialDate }) {
                 className="de-collapse-header"
                 onClick={() => setShowAccums(s => !s)}
               >
-                <div className="de-section-header__dot" style={{ background: 'var(--gold)' }} />
+                <div className="de-section-header__dot" style={{ background: 'var(--accent)' }} />
                 Accumulators
                 <span className="de-collapse-header__count">{accums.length}</span>
                 <span className="de-collapse-header__chev">{showAccums ? '▲' : '▼'}</span>
@@ -237,7 +261,7 @@ export default function TodayView({ onBankrollLoaded, initialDate }) {
                     style={{ overflow: 'hidden' }}
                   >
                     {accums.map((a, i) => (
-                      <AccumulatorCard key={i} accum={a} index={i} />
+                      <AccumulatorCard key={i} accum={a} index={i} liveStatuses={liveStatuses} />
                     ))}
                   </motion.div>
                 )}
@@ -260,6 +284,23 @@ export default function TodayView({ onBankrollLoaded, initialDate }) {
       )}
     </div>
   )
+}
+
+function compareActiveBetsByStateAndTime(a, b) {
+  const aLive = a.gameStatus === 'LIVE'
+  const bLive = b.gameStatus === 'LIVE'
+  if (aLive !== bLive) return aLive ? -1 : 1
+
+  const aTime = gameTimeValue(a)
+  const bTime = gameTimeValue(b)
+  if (aTime !== bTime) return aTime - bTime
+
+  return String(a.gamePk ?? '').localeCompare(String(b.gamePk ?? ''))
+}
+
+function gameTimeValue(game) {
+  const time = Date.parse(game?.gameDate ?? '')
+  return Number.isNaN(time) ? Number.MAX_SAFE_INTEGER : time
 }
 
 function buildRlDiagnostics(predictions) {

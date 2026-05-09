@@ -14,7 +14,13 @@ from flask import Flask, render_template, jsonify, request, send_file, abort
 from utils import load_json, DATA_RAW, DATA_PROC, BASE_DIR, get_logger
 from betting_model import EDGES_CSV, EDGES_JSON, generate_card_betting, save_outputs
 from check_movement import MOVEMENT_CSV, MOVEMENT_JSON, run_check
-from bankroll import BET_HISTORY_CSV, STAKING_CSV, STAKING_JSON, load_history
+from bankroll import BET_HISTORY_CSV, STAKING_CSV, load_history, current_bankroll as _current_bankroll
+import ledger
+import integrity as _integrity
+import backup as _backup
+import scheduler as _scheduler
+import log as _slog
+from auth import require_admin_token, rate_limit, admin_action
 
 log = get_logger("app")
 
@@ -24,6 +30,19 @@ app = Flask(
     static_folder=str(BASE_DIR / "static"),
 )
 app.config["TEMPLATES_AUTO_RELOAD"] = True
+
+# ── custom JSON encoder for Decimal ──────────────────────────────────────────
+from decimal import Decimal as _Decimal
+from flask.json.provider import DefaultJSONProvider as _DefaultJSONProvider
+
+class _DecimalJSONProvider(_DefaultJSONProvider):
+    def default(self, obj):
+        if isinstance(obj, _Decimal):
+            return float(obj)
+        return super().default(obj)
+
+app.json_provider_class = _DecimalJSONProvider
+app.json = _DecimalJSONProvider(app)
 
 
 # ── fighter enrichment helpers ────────────────────────────────────────────────
@@ -126,23 +145,82 @@ def load_movement():
     }
 
 
-def load_staking():
-    if STAKING_JSON.exists():
-        try:
-            plan = load_json(STAKING_JSON)
-        except Exception as exc:
-            log.warning("Could not load staking plan: %s", exc)
-            plan = {}
-    else:
-        load_betting()
-        plan = load_json(STAKING_JSON) if STAKING_JSON.exists() else {}
-    plan.setdefault("bankroll", 500.0)
-    plan.setdefault("base_bankroll", 500.0)
-    plan.setdefault("singles", [])
-    plan.setdefault("accumulators", [])
-    plan.setdefault("staking_rules", [])
-    plan["history"] = load_history()
-    return plan
+_STAKING_RULES = [
+    {"edge": "3-6%",           "stake": "3%"},
+    {"edge": "6-10%",          "stake": "5%"},
+    {"edge": "10-15%",         "stake": "7%"},
+    {"edge": "15%+",           "stake": "10%"},
+    {"edge": "Low confidence", "stake": "cap 3%"},
+    {"edge": "Singles cap",    "stake": "50% max"},
+]
+
+
+def load_staking() -> dict:
+    # RULE: reads ONLY from ledger — never from staking_plan.json or betting_edges.json.
+    active = ledger.get_active_event()
+    bankroll = float(_current_bankroll())
+    if not active:
+        return {
+            "bankroll":               bankroll,
+            "base_bankroll":          500.0,
+            "singles":                [],
+            "accumulators":           [],
+            "total_single_stake":     0.0,
+            "total_accumulator_stake": 0.0,
+            "staking_rules":          _STAKING_RULES,
+            "history":                load_history(),
+        }
+    event_id = active["event_id"]
+    bets = ledger.get_event_bets(event_id)
+    singles = [b for b in bets if b["bet_type"] == "single"]
+    accas   = [b for b in bets if b["bet_type"] in ("double", "treble", "4fold")]
+
+    # Reshape singles to match template expectations: pick.stake.eur / pick.stake.pct
+    for s in singles:
+        eur = s.get("stake_eur") or 0.0
+        pct = (eur / bankroll * 100) if bankroll else 0.0
+        ret = s.get("potential_return") or 0.0
+        s["stake"] = {
+            "eur":   eur,
+            "pct":   f"{pct:.1f}%",
+            "label": s.get("status", "pending"),
+        }
+        s["potential_return"] = ret
+        s["profit_if_win"]    = round(ret - eur, 2)
+        s["decimal_odds"]     = s.get("odds") or 0.0
+        # Derive label from edge when confidence column exists
+        edge = s.get("edge")
+        if not s.get("label"):
+            if edge is None:
+                s["label"] = "Placed"
+            elif edge >= 10:
+                s["label"] = "Best Bet"
+            elif edge >= 6:
+                s["label"] = "Lean"
+            elif edge >= 3:
+                s["label"] = "Small Value"
+            else:
+                s["label"] = "Pass"
+        if s.get("confidence") is None:
+            s["confidence"] = ""
+
+    # Accumulators: template uses acca.stake as a float directly
+    for a in accas:
+        a["stake"]         = a.get("stake_eur") or 0.0
+        a["combined_edge"] = a.get("combined_edge") or 0.0
+
+    return {
+        "event_name":              active.get("event_name", ""),
+        "event_id":                event_id,
+        "bankroll":                bankroll,
+        "base_bankroll":           500.0,
+        "singles":                 singles,
+        "accumulators":            accas,
+        "total_single_stake":      sum(b["stake_eur"] for b in singles),
+        "total_accumulator_stake": sum(b.get("stake_eur", 0) for b in bets if b["bet_type"] in ("double", "treble", "4fold")),
+        "staking_rules":           _STAKING_RULES,
+        "history":                 load_history(),
+    }
 
 
 def _market_rows(fight: dict, predicate):
@@ -222,6 +300,14 @@ def _verdict_summary(fight: dict) -> dict:
 
 
 def enrich_fight(fight: dict) -> dict:
+    # Strip non-playable markets before the template sees them.
+    # Avoid/Pass markets and unpriced rows (no odds) must never reach the board.
+    fight["markets"] = [
+        m for m in fight.get("markets", [])
+        if m.get("label") not in ("Pass", "Avoid")
+        and m.get("decimal_odds") not in ("", None)
+        and m.get("edge") is not None
+    ]
     fight["verdict"] = _verdict_summary(fight)
     return fight
 
@@ -301,12 +387,14 @@ def index():
     card, fighters, matchups, _ = load_all()
     plan = enrich_plan(load_staking())
     betting = [enrich_fight(fight) for fight in load_betting()]
+    active_event = ledger.get_active_event()
     return render_template("index.html",
                            card=card,
                            matchups=matchups,
                            fighters=fighters,
                            plan=plan,
-                           betting=betting)
+                           betting=betting,
+                           active_event=active_event)
 
 
 @app.route("/fighters")
@@ -397,6 +485,288 @@ def export_page():
                            card=card,
                            fighters=fighters,
                            matchups=matchups)
+
+
+@app.route("/history")
+def history_page():
+    events = ledger.get_all_events()
+    summaries = [ledger.get_event_summary(e["event_id"]) for e in events]
+    return render_template("history.html", summaries=summaries)
+
+
+@app.route("/settle/<event_id>", methods=["GET"])
+def settle_page(event_id: str):
+    summary = ledger.get_event_summary(event_id)
+    if not summary:
+        abort(404)
+    return render_template("settle.html", summary=summary)
+
+
+@app.route("/api/settle/<event_id>/preview", methods=["POST"])
+def api_settle_preview(event_id: str):
+    """
+    Dry-run settlement — calculates P&L and validates inputs without committing.
+    POST JSON body: {"results": {"<bet_id>": "won"|"lost"|"push"|"void", ...}}
+    """
+    body = request.get_json(silent=True) or {}
+    results = body.get("results", {})
+    if not results:
+        return jsonify({"error": "No results provided"}), 400
+    try:
+        preview = ledger.preview_settlement(event_id, results)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        log.exception("Preview failed for event %s", event_id)
+        return jsonify({"error": str(exc)}), 500
+    return jsonify(preview)
+
+
+@app.route("/api/settle/<event_id>", methods=["POST"])
+@rate_limit(max_calls=10, window_seconds=60)
+def api_settle(event_id: str):
+    """
+    POST JSON body:
+    {
+        "results":              {"<bet_id>": "won"|"lost"|"push"|"void"},
+        "settled_by":           "web_ui",           (optional, default "web_ui")
+        "result_source_detail": "ESPN.com",          (optional)
+        "result_confidence":    "confirmed"          (optional)
+    }
+    Settles all provided bets in one ACID transaction.
+    Admin protection: raises if event is already settled or archived.
+    """
+    # Archived events are physically read-only at the API layer
+    event = ledger.get_event(event_id)
+    if event and event.get("status") == "archived":
+        return jsonify({"error": "Event is archived and read-only."}), 403
+
+    body    = request.get_json(silent=True) or {}
+    results = body.get("results", {})
+    if not results:
+        return jsonify({"error": "No results provided"}), 400
+
+    settled_by           = body.get("settled_by", "web_ui")
+    result_source_detail = body.get("result_source_detail")
+    result_confidence    = body.get("result_confidence", "confirmed")
+
+    try:
+        summary = ledger.settle_event(
+            event_id, results,
+            settled_by=settled_by,
+            result_source_detail=result_source_detail,
+            result_confidence=result_confidence,
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 409
+    except Exception as exc:
+        log.exception("Settlement failed for event %s", event_id)
+        return jsonify({"error": str(exc)}), 500
+    return jsonify(summary)
+
+
+@app.route("/api/event/<event_id>/state", methods=["POST"])
+def api_event_state(event_id: str):
+    """
+    Advance an event to its next state in the lifecycle.
+    POST JSON body: {"status": "locked"|"completed"|"archived"|...}
+    Enforces forward-only transitions.
+    """
+    body = request.get_json(silent=True) or {}
+    new_status = body.get("status", "").strip()
+    if not new_status:
+        return jsonify({"error": "Missing 'status' in request body"}), 400
+    try:
+        updated_event = ledger.advance_event_state(event_id, new_status)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        log.exception("State advance failed for event %s", event_id)
+        return jsonify({"error": str(exc)}), 500
+    return jsonify(updated_event)
+
+
+@app.route("/api/event/<event_id>/audit")
+def api_event_audit(event_id: str):
+    """Return the audit log for a specific event."""
+    logs = ledger.get_audit_log(entity_id=event_id)
+    return jsonify(logs)
+
+
+@app.route("/api/locks")
+def api_locks():
+    """Return currently held pipeline locks."""
+    return jsonify(ledger.get_active_locks())
+
+
+@app.route("/api/bankroll/history")
+def api_bankroll_history():
+    """Return all post-event bankroll snapshots — equity curve data."""
+    return jsonify(ledger.get_bankroll_history())
+
+
+# ── integrity & observability API ─────────────────────────────────────────────
+
+@app.route("/api/integrity", methods=["GET"])
+@require_admin_token
+def api_integrity():
+    """
+    Run all integrity checks against the ledger database.
+    Returns a structured report with per-check pass/fail and offending rows.
+    """
+    try:
+        report = _integrity.verify_ledger()
+    except Exception as exc:
+        log.exception("Integrity check failed")
+        return jsonify({"error": str(exc)}), 500
+    status_code = 200 if report["ok"] else 207
+    return jsonify(report), status_code
+
+
+@app.route("/api/integrity/rebuild-bankroll", methods=["POST"])
+@admin_action(max_calls=5, window_seconds=60)
+def api_rebuild_bankroll():
+    """
+    Recompute bankroll_before/after on every settled bet from scratch.
+    POST body: {"dry_run": true|false}  (default dry_run=true)
+    """
+    body    = request.get_json(silent=True) or {}
+    dry_run = bool(body.get("dry_run", True))
+    try:
+        result = _integrity.rebuild_bankroll(dry_run=dry_run)
+    except Exception as exc:
+        log.exception("rebuild_bankroll failed")
+        return jsonify({"error": str(exc)}), 500
+    return jsonify(result)
+
+
+@app.route("/api/integrity/recover-locks", methods=["POST"])
+@admin_action(max_calls=10, window_seconds=60)
+def api_recover_locks():
+    """Delete all expired pipeline_locks. Safe crash-recovery endpoint."""
+    try:
+        result = _integrity.recover_stale_locks()
+    except Exception as exc:
+        log.exception("recover_stale_locks failed")
+        return jsonify({"error": str(exc)}), 500
+    return jsonify(result)
+
+
+@app.route("/api/integrity/replay/<event_id>", methods=["POST"])
+@admin_action(max_calls=5, window_seconds=60)
+def api_replay_event(event_id: str):
+    """
+    Walk the settlement of one event, recomputing P&L from scratch.
+    POST body: {"dry_run": true|false}  (default dry_run=true)
+    """
+    body    = request.get_json(silent=True) or {}
+    dry_run = bool(body.get("dry_run", True))
+    try:
+        result = _integrity.replay_event(event_id, dry_run=dry_run)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except Exception as exc:
+        log.exception("replay_event failed for %s", event_id)
+        return jsonify({"error": str(exc)}), 500
+    return jsonify(result)
+
+
+@app.route("/api/ledger/entries", methods=["GET"])
+@app.route("/api/ledger/entries/<event_id>", methods=["GET"])
+def api_ledger_entries(event_id: str | None = None):
+    """
+    Return append-only financial ledger entries.
+    Optional ?limit=N query param (default 500).
+    """
+    limit = int(request.args.get("limit", 500))
+    return jsonify(ledger.get_ledger_entries(event_id=event_id, limit=limit))
+
+
+@app.route("/api/metrics", methods=["GET"])
+def api_metrics():
+    """
+    Return recent operation timing records.
+    Optional ?operation=settle_event&limit=100
+    """
+    operation = request.args.get("operation")
+    limit = int(request.args.get("limit", 100))
+    from ledger import get_operation_metrics
+    return jsonify(get_operation_metrics(operation=operation, limit=limit))
+
+
+# ── backup API ────────────────────────────────────────────────────────────────
+
+@app.route("/api/backup", methods=["POST"])
+@admin_action(max_calls=10, window_seconds=60)
+def api_backup():
+    """
+    Trigger a manual database backup.
+    POST body: {"reason": "manual"}  (optional)
+    """
+    body   = request.get_json(silent=True) or {}
+    reason = body.get("reason", "manual")
+    try:
+        dest = _backup.backup_db(reason)
+    except Exception as exc:
+        log.exception("Backup failed")
+        return jsonify({"error": str(exc)}), 500
+    _slog.backup_op(filename=dest.name, size_bytes=dest.stat().st_size, reason=reason)
+    return jsonify({"ok": True, "file": dest.name, "path": str(dest)})
+
+
+@app.route("/api/backup/list", methods=["GET"])
+@require_admin_token
+def api_backup_list():
+    """Return metadata for all backup files."""
+    return jsonify(_backup.list_backups())
+
+
+@app.route("/api/backup/cleanup", methods=["POST"])
+@admin_action(max_calls=5, window_seconds=60)
+def api_backup_cleanup():
+    """
+    Prune old backup files.
+    POST body: {"keep_days": 30}  (default 30)
+    """
+    body      = request.get_json(silent=True) or {}
+    keep_days = int(body.get("keep_days", 30))
+    try:
+        result = _backup.cleanup_old_backups(keep_days=keep_days)
+    except Exception as exc:
+        log.exception("Backup cleanup failed")
+        return jsonify({"error": str(exc)}), 500
+    return jsonify(result)
+
+
+@app.route("/api/scheduler/status", methods=["GET"])
+@require_admin_token
+def api_scheduler_status():
+    """Return background scheduler state and last maintenance run result."""
+    return jsonify(_scheduler.status())
+
+
+@app.route("/api/scheduler/run", methods=["POST"])
+@admin_action(max_calls=3, window_seconds=300)
+def api_scheduler_run():
+    """Trigger maintenance jobs immediately (on-demand)."""
+    try:
+        result = _scheduler.run_maintenance()
+    except Exception as exc:
+        log.exception("On-demand maintenance failed")
+        return jsonify({"error": str(exc)}), 500
+    return jsonify(result)
+
+
+@app.route("/wireframe")
+def wireframe():
+    card, fighters, matchups, _ = load_all()
+    try:
+        betting = [enrich_fight(f) for f in load_betting()]
+    except Exception:
+        betting = []
+    return render_template("wireframe.html", card=card, matchups=matchups, fighters=fighters, betting=betting)
 
 
 # ── JSON API (used by Chart.js) ───────────────────────────────────────────────
@@ -524,6 +894,16 @@ def not_found(e):
 # ── launch ────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
+    from utils import DATA_PROC
+    from ledger import BETTING_DIR
+
+    # Structured event log → betting/events.jsonl
+    _slog.configure(BETTING_DIR / "events.jsonl")
+    _slog.info("app_starting", port=int(os.environ.get("PORT", "5002")))
+
+    # Background nightly maintenance (integrity check + backup + cleanup)
+    _scheduler.start(interval_hours=24)
+
     port = int(os.environ.get("PORT", "5002"))
     log.info("Starting Octagon IQ on http://localhost:%s", port)
     app.run(debug=False, port=port, host="0.0.0.0", use_reloader=False)

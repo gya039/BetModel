@@ -1,0 +1,376 @@
+{% extends "base.html" %}
+{% block title %}Settle — {{ summary.event_name }} | Octagon IQ{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div class="page-header-inner">
+    <div class="page-header-meta">Settlement</div>
+    <h1 class="page-header-title">{{ summary.event_name }}</h1>
+    <div class="page-header-sub">
+      {{ summary.event_date }}
+      &nbsp;·&nbsp;
+      <span class="settle-badge settle-badge-{{ summary.status }}">{{ summary.status | replace('_',' ') | upper }}</span>
+      &nbsp;·&nbsp;
+      {{ summary.pending_count }} bet{{ 's' if summary.pending_count != 1 }} pending
+    </div>
+  </div>
+</div>
+
+<div class="container" style="max-width:900px;margin:0 auto;padding:2rem 1rem 4rem;">
+
+  {# ── Already fully settled ──────────────────────────────────────────────── #}
+  {% if summary.pending_count == 0 %}
+  <div class="settle-done">
+    <div class="settle-done-icon">✓</div>
+    <div class="settle-done-title">All bets settled</div>
+    <div class="settle-done-sub">
+      P&amp;L:
+      <span class="{{ 'pnl-pos' if summary.total_pnl >= 0 else 'pnl-neg' }}">
+        {{ '%+.2f'|format(summary.total_pnl) }} EUR
+      </span>
+    </div>
+    {% if summary.snapshot %}
+    <div class="settle-snapshot">
+      Bankroll after event:
+      <strong>{{ '%.2f'|format(summary.snapshot.bankroll_after) }} EUR</strong>
+    </div>
+    {% endif %}
+    <div style="display:flex;gap:.75rem;justify-content:center;margin-top:1.5rem;flex-wrap:wrap;">
+      <a href="/history" class="btn-primary">View History</a>
+      {% if summary.status == 'settled' %}
+      <button class="btn-secondary" onclick="advanceState('archived')">Archive Event</button>
+      {% endif %}
+    </div>
+  </div>
+
+  {% else %}
+
+  {# ── Instructions ───────────────────────────────────────────────────────── #}
+  <div class="settle-instructions">
+    <strong>Two-step settlement:</strong>
+    Select results for each bet → click <em>Preview P&amp;L</em> to validate →
+    confirm the numbers → click <em>Confirm &amp; Settle</em> to commit.
+    All results are saved in a single ACID transaction.
+    <strong>Idempotent:</strong> re-submitting the same results is safe.
+  </div>
+
+  {# ── State advancement strip ────────────────────────────────────────────── #}
+  <div class="settle-state-strip">
+    {% set states = ['scheduled','betting_open','locked','completed','settled','archived'] %}
+    {% for s in states %}
+    <span class="settle-state-step {{ 'active' if s == summary.status else ('done' if loop.index < states.index(summary.status)+1 else '') }}">
+      {{ s | replace('_',' ') }}
+    </span>
+    {% if not loop.last %}<span class="settle-state-arrow">→</span>{% endif %}
+    {% endfor %}
+  </div>
+
+  {# ── Flash messages ─────────────────────────────────────────────────────── #}
+  <div id="settle-flash" style="display:none;" class="settle-flash"></div>
+
+  {# ── Preview panel (hidden until triggered) ─────────────────────────────── #}
+  <div id="preview-panel" style="display:none;" class="preview-panel">
+    <div class="preview-panel-header">
+      <span class="preview-panel-title">Settlement Preview</span>
+      <span class="preview-panel-sub">Nothing committed yet — review and confirm</span>
+    </div>
+    <div class="preview-grid" id="preview-grid">
+      <!-- filled by JS -->
+    </div>
+    <div class="preview-totals" id="preview-totals">
+      <!-- filled by JS -->
+    </div>
+    <div class="preview-actions">
+      <button class="btn-primary" id="confirm-btn" onclick="submitSettlement()">
+        ✓ Confirm &amp; Settle
+      </button>
+      <button class="btn-secondary" onclick="closePreview()">← Revise</button>
+    </div>
+  </div>
+
+  {# ── Bet entry form ─────────────────────────────────────────────────────── #}
+  <form id="settle-form">
+
+    {# Singles #}
+    {% set singles = summary.bets | selectattr("bet_type", "equalto", "single") | list %}
+    {% if singles %}
+    <h2 class="settle-section-title">Singles</h2>
+    <div class="settle-table-wrap">
+      <table class="settle-table">
+        <thead>
+          <tr>
+            <th>Fight</th><th>Market</th><th>Selection</th>
+            <th>Odds</th><th>Stake</th><th>Return</th><th>Result</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for bet in singles %}
+          <tr class="settle-row" data-bet-id="{{ bet.bet_id }}" data-status="{{ bet.status }}">
+            <td class="settle-fight">{{ bet.fight }}</td>
+            <td class="settle-market">{{ bet.market }}</td>
+            <td><strong>{{ bet.selection }}</strong></td>
+            <td class="settle-odds">{{ '%.2f'|format(bet.odds) }}</td>
+            <td class="settle-stake">{{ '%.2f'|format(bet.stake_eur) }}</td>
+            <td class="settle-ret">{{ '%.2f'|format(bet.potential_return) }}</td>
+            <td class="settle-result-cell">
+              {% if bet.status == 'pending' %}
+              <select class="settle-select" name="{{ bet.bet_id }}">
+                <option value="">— pick —</option>
+                <option value="won">Won</option>
+                <option value="lost">Lost</option>
+                <option value="push">Push</option>
+                <option value="void">Void</option>
+              </select>
+              {% else %}
+              <span class="settle-badge settle-badge-{{ bet.status }}">{{ bet.status|capitalize }}</span>
+              <span class="settle-pnl {{ 'pnl-pos' if (bet.pnl or 0) >= 0 else 'pnl-neg' }}">
+                {{ '%+.2f'|format(bet.pnl or 0) }}
+              </span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
+    {# Accumulators #}
+    {% set accas = summary.bets | rejectattr("bet_type", "equalto", "single") | list %}
+    {% if accas %}
+    <h2 class="settle-section-title" style="margin-top:2rem;">Accumulators</h2>
+    <div class="settle-table-wrap">
+      <table class="settle-table">
+        <thead>
+          <tr>
+            <th>Type</th><th>Legs</th><th>Odds</th>
+            <th>Stake</th><th>Return</th><th>Result</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for bet in accas %}
+          <tr class="settle-row" data-bet-id="{{ bet.bet_id }}" data-status="{{ bet.status }}">
+            <td><span class="settle-badge settle-badge-type">{{ bet.bet_type|capitalize }}</span></td>
+            <td class="settle-fight" style="font-size:.82rem;">{{ bet.fight }}</td>
+            <td class="settle-odds">{{ '%.2f'|format(bet.odds) }}</td>
+            <td class="settle-stake">{{ '%.2f'|format(bet.stake_eur) }}</td>
+            <td class="settle-ret">{{ '%.2f'|format(bet.potential_return) }}</td>
+            <td class="settle-result-cell">
+              {% if bet.status == 'pending' %}
+              <select class="settle-select" name="{{ bet.bet_id }}">
+                <option value="">— pick —</option>
+                <option value="won">Won</option>
+                <option value="lost">Lost</option>
+                <option value="push">Push</option>
+                <option value="void">Void</option>
+              </select>
+              {% else %}
+              <span class="settle-badge settle-badge-{{ bet.status }}">{{ bet.status|capitalize }}</span>
+              <span class="settle-pnl {{ 'pnl-pos' if (bet.pnl or 0) >= 0 else 'pnl-neg' }}">
+                {{ '%+.2f'|format(bet.pnl or 0) }}
+              </span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
+    <div class="settle-actions">
+      <button type="button" class="btn-primary" id="preview-btn" onclick="runPreview()">
+        Preview P&amp;L →
+      </button>
+      <a href="/history" class="btn-secondary">Cancel</a>
+      <span class="settle-actions-hint" id="settle-hint"></span>
+    </div>
+
+  </form>
+  {% endif %}
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  var EVENT_ID = '{{ summary.event_id }}';
+  var pendingResults = {};
+
+  /* ── collect results from form ── */
+  function collectResults() {
+    var results = {};
+    var unpicked = 0;
+    document.querySelectorAll('select.settle-select').forEach(function (sel) {
+      if (sel.value) results[sel.name] = sel.value;
+      else unpicked++;
+    });
+    return { results: results, unpicked: unpicked };
+  }
+
+  /* ── preview ── */
+  window.runPreview = function () {
+    var btn = document.getElementById('preview-btn');
+    var flash = document.getElementById('settle-flash');
+    var { results, unpicked } = collectResults();
+
+    if (Object.keys(results).length === 0) {
+      showFlash('Select at least one result before previewing.', 'error');
+      return;
+    }
+    if (unpicked > 0) {
+      showFlash(unpicked + ' bet(s) will be skipped (no result selected). Preview continues.', 'warn');
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Calculating…';
+    pendingResults = results;
+
+    fetch('/api/settle/' + EVENT_ID + '/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ results: results }),
+    })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      btn.disabled = false;
+      btn.textContent = 'Preview P&L →';
+      if (data.error) { showFlash('Preview error: ' + data.error, 'error'); return; }
+      if (!data.valid) { showFlash('Validation errors: ' + data.errors.join('; '), 'error'); return; }
+      renderPreview(data);
+    })
+    .catch(function (err) {
+      btn.disabled = false;
+      btn.textContent = 'Preview P&L →';
+      showFlash('Network error: ' + err, 'error');
+    });
+  };
+
+  /* ── render preview panel ── */
+  function renderPreview(data) {
+    var grid = document.getElementById('preview-grid');
+    var totals = document.getElementById('preview-totals');
+    var panel = document.getElementById('preview-panel');
+
+    // Per-bet rows
+    var rows = data.bets.map(function (b) {
+      var pnlClass = b.pnl >= 0 ? 'pnl-pos' : 'pnl-neg';
+      return '<div class="preview-row">'
+        + '<div class="preview-row-fight">' + esc(b.fight) + '</div>'
+        + '<div class="preview-row-sel"><strong>' + esc(b.selection) + '</strong></div>'
+        + '<div><span class="settle-badge settle-badge-' + b.result + '">' + cap(b.result) + '</span></div>'
+        + '<div class="preview-row-nums">'
+        +   '<span>Stake ' + b.stake_eur.toFixed(2) + '</span>'
+        +   ' · <span class="' + pnlClass + '">' + fmt(b.pnl) + ' EUR</span>'
+        +   ' → <span>Bank ' + b.bankroll_after.toFixed(2) + '</span>'
+        + '</div>'
+        + '</div>';
+    }).join('');
+    grid.innerHTML = rows || '<p style="color:#64748b;padding:.5rem 0;">No pending bets in results.</p>';
+
+    // Warnings
+    if (data.warnings && data.warnings.length) {
+      var w = data.warnings.map(function(w){ return '<li>'+esc(w)+'</li>'; }).join('');
+      grid.innerHTML += '<ul class="preview-warnings">' + w + '</ul>';
+    }
+
+    // Totals
+    var pnlClass = data.total_pnl >= 0 ? 'pnl-pos' : 'pnl-neg';
+    totals.innerHTML =
+      '<div class="preview-totals-grid">'
+      + stat('Bets settled', data.bets.length)
+      + stat('Won / Lost / Push', data.bets_won + ' / ' + data.bets_lost + ' / ' + data.bets_push)
+      + stat('Total staked', data.total_staked.toFixed(2) + ' EUR')
+      + statClass('Event P&amp;L', fmt(data.total_pnl) + ' EUR', pnlClass)
+      + stat('Bankroll before', data.bankroll_before.toFixed(2) + ' EUR')
+      + statClass('Bankroll after', data.bankroll_after.toFixed(2) + ' EUR',
+                  data.total_pnl >= 0 ? 'pnl-pos' : 'pnl-neg')
+      + '</div>';
+
+    panel.style.display = 'block';
+    panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    document.getElementById('settle-form').style.opacity = '0.45';
+    document.getElementById('settle-form').style.pointerEvents = 'none';
+  }
+
+  /* ── close preview, go back to form ── */
+  window.closePreview = function () {
+    document.getElementById('preview-panel').style.display = 'none';
+    document.getElementById('settle-form').style.opacity = '';
+    document.getElementById('settle-form').style.pointerEvents = '';
+    pendingResults = {};
+  };
+
+  /* ── commit settlement ── */
+  window.submitSettlement = function () {
+    var btn = document.getElementById('confirm-btn');
+    if (!pendingResults || !Object.keys(pendingResults).length) {
+      showFlash('No results to commit. Run Preview first.', 'error'); return;
+    }
+    btn.disabled = true;
+    btn.textContent = 'Saving…';
+
+    fetch('/api/settle/' + EVENT_ID, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ results: pendingResults }),
+    })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      if (data.error) {
+        showFlash('Error: ' + data.error, 'error');
+        btn.disabled = false; btn.textContent = '✓ Confirm & Settle';
+        return;
+      }
+      var pnl = (data.total_pnl >= 0 ? '+' : '') + data.total_pnl.toFixed(2);
+      var br  = data.bankroll_after ? data.bankroll_after.toFixed(2) : '—';
+      showFlash(
+        '✓ Settled ' + data.settled.length + ' bet(s). P&L: ' + pnl +
+        ' EUR · New bankroll: ' + br + ' EUR', 'success'
+      );
+      setTimeout(function () { window.location.reload(); }, 1800);
+    })
+    .catch(function (err) {
+      showFlash('Network error: ' + err, 'error');
+      btn.disabled = false; btn.textContent = '✓ Confirm & Settle';
+    });
+  };
+
+  /* ── advance event state (archive etc.) ── */
+  window.advanceState = function (newStatus) {
+    if (!confirm('Move event to "' + newStatus + '"?')) return;
+    fetch('/api/event/' + EVENT_ID + '/state', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: newStatus }),
+    })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      if (data.error) { alert('Error: ' + data.error); return; }
+      window.location.reload();
+    });
+  };
+
+  /* ── helpers ── */
+  function showFlash(msg, type) {
+    var el = document.getElementById('settle-flash');
+    el.innerHTML = msg;
+    el.className = 'settle-flash settle-flash-' + type;
+    el.style.display = 'block';
+    el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+  function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
+  function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+  function fmt(n) { return (n >= 0 ? '+' : '') + n.toFixed(2); }
+  function stat(label, val) {
+    return '<div class="preview-stat"><div class="preview-stat-val">' + val +
+           '</div><div class="preview-stat-lbl">' + label + '</div></div>';
+  }
+  function statClass(label, val, cls) {
+    return '<div class="preview-stat"><div class="preview-stat-val ' + cls + '">' + val +
+           '</div><div class="preview-stat-lbl">' + label + '</div></div>';
+  }
+})();
+</script>
+{% endblock %}
