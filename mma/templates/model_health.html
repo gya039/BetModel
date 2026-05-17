@@ -1,0 +1,278 @@
+{% extends "base.html" %}
+{% block title %}Model Health — Octagon IQ{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Model Health</h1>
+  <p class="page-subtitle">Calibration · CLV · Edge Distribution · Performance by Confidence Tier</p>
+</div>
+
+{% if health.error %}
+<div class="alert alert--warn">
+  <strong>Error loading calibration data:</strong> {{ health.error }}<br>
+  Run a card generation first to populate predictions.
+</div>
+{% else %}
+
+{# ── Summary strip ─────────────────────────────────────────────────────────── #}
+<div class="metrics-strip">
+
+  <div class="metric-card">
+    <div class="metric-label">Predictions tracked</div>
+    <div class="metric-value">{{ health.total_predictions }}</div>
+    <div class="metric-sub">{{ health.settled_predictions }} settled · {{ health.pending_predictions }} pending</div>
+  </div>
+
+  {% if health.brier_score is not none %}
+  <div class="metric-card {% if health.brier_score < health.brier_baseline %}metric-card--good{% else %}metric-card--bad{% endif %}">
+    <div class="metric-label">Brier Score</div>
+    <div class="metric-value">{{ "%.4f"|format(health.brier_score) }}</div>
+    <div class="metric-sub">Baseline (random): {{ health.brier_baseline }} — lower is better</div>
+  </div>
+  {% endif %}
+
+  {% if health.log_loss is not none %}
+  <div class="metric-card {% if health.log_loss < health.log_loss_baseline %}metric-card--good{% else %}metric-card--bad{% endif %}">
+    <div class="metric-label">Log Loss</div>
+    <div class="metric-value">{{ "%.4f"|format(health.log_loss) }}</div>
+    <div class="metric-sub">Baseline (random): {{ "%.3f"|format(health.log_loss_baseline) }} — lower is better</div>
+  </div>
+  {% endif %}
+
+  {% if health.mean_calibration_error is not none %}
+  <div class="metric-card {% if health.mean_calibration_error < 0.05 %}metric-card--good{% elif health.mean_calibration_error < 0.10 %}metric-card--neutral{% else %}metric-card--bad{% endif %}">
+    <div class="metric-label">Mean Calibration Error</div>
+    <div class="metric-value">{{ "%.4f"|format(health.mean_calibration_error) }}</div>
+    <div class="metric-sub">&lt; 0.05 good · &lt; 0.10 acceptable</div>
+  </div>
+  {% endif %}
+
+  {% set clv = health.clv %}
+  {% if clv.count > 0 %}
+  <div class="metric-card {% if clv.clv_positive_pct >= 55 %}metric-card--good{% elif clv.clv_positive_pct >= 45 %}metric-card--neutral{% else %}metric-card--bad{% endif %}">
+    <div class="metric-label">CLV Beat %</div>
+    <div class="metric-value">{{ clv.clv_positive_pct }}%</div>
+    <div class="metric-sub">Avg CLV: {{ "%.4f"|format(clv.avg_clv) }} — {{ clv.interpretation }}</div>
+  </div>
+  {% endif %}
+
+</div>
+
+{# ── ROI summary ──────────────────────────────────────────────────────────── #}
+{% set roi = health.roi_summary %}
+<section class="section">
+  <h2 class="section-title">Results Summary</h2>
+  <div class="data-table-wrap">
+    <table class="data-table">
+      <thead><tr>
+        <th>Total tracked</th><th>Settled</th><th>Wins</th><th>Losses</th>
+        <th>Hit rate</th><th>Pending</th>
+      </tr></thead>
+      <tbody><tr>
+        <td>{{ roi.total_predictions }}</td>
+        <td>{{ roi.settled }}</td>
+        <td class="val--pos">{{ roi.wins }}</td>
+        <td class="val--neg">{{ roi.losses }}</td>
+        <td>{% if roi.hit_rate is not none %}{{ roi.hit_rate }}%{% else %}—{% endif %}</td>
+        <td>{{ roi.pending }}</td>
+      </tr></tbody>
+    </table>
+  </div>
+</section>
+
+{# ── Calibration curve ────────────────────────────────────────────────────── #}
+{% if health.calibration_buckets %}
+<section class="section">
+  <h2 class="section-title">Calibration Curve</h2>
+  <p class="section-desc">
+    Each bar shows how often predictions in that probability bucket actually won.
+    A perfect model: observed win rate ≈ predicted probability.
+    Bars above the diagonal = underconfident; below = overconfident.
+  </p>
+  <div class="chart-wrap">
+    <canvas id="calChart" height="260"></canvas>
+  </div>
+  <div class="data-table-wrap" style="margin-top:1rem">
+    <table class="data-table data-table--sm">
+      <thead><tr>
+        <th>Predicted</th><th>Observed</th><th>Count</th><th>Error</th>
+      </tr></thead>
+      <tbody>
+        {% for b in health.calibration_buckets %}
+        <tr>
+          <td>{{ "%.0f"|format(b.predicted_rate * 100) }}%</td>
+          <td>{{ "%.1f"|format(b.observed_rate * 100) }}%</td>
+          <td>{{ b.count }}</td>
+          <td class="{% if b.calibration_error < 0.05 %}val--pos{% elif b.calibration_error < 0.10 %}val--neutral{% else %}val--neg{% endif %}">
+            {{ "%.4f"|format(b.calibration_error) }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+{# ── Edge distribution ────────────────────────────────────────────────────── #}
+{% if health.edge_distribution %}
+<section class="section">
+  <h2 class="section-title">Performance by Edge Tier</h2>
+  <p class="section-desc">
+    Higher-edge bets should win more often if the model is genuinely calibrated.
+    Low counts mean these numbers are not yet statistically significant.
+  </p>
+  <div class="data-table-wrap">
+    <table class="data-table">
+      <thead><tr>
+        <th>Edge tier</th><th>Predictions</th><th>Settled</th>
+        <th>Wins</th><th>Losses</th><th>Hit rate</th>
+      </tr></thead>
+      <tbody>
+        {% for tier in health.edge_distribution %}
+        <tr>
+          <td><span class="badge badge--edge">{{ tier.label }}</span></td>
+          <td>{{ tier.count }}</td>
+          <td>{{ tier.settled }}</td>
+          <td class="val--pos">{{ tier.wins }}</td>
+          <td class="val--neg">{{ tier.losses }}</td>
+          <td>{% if tier.hit_rate is not none %}{{ tier.hit_rate }}%{% else %}—{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+{# ── Confidence tier performance ──────────────────────────────────────────── #}
+{% if health.confidence_tier_performance %}
+<section class="section">
+  <h2 class="section-title">Performance by Confidence Tier</h2>
+  <p class="section-desc">
+    "High" confidence picks should win significantly more than "Low".
+    If they don't, the confidence system needs recalibration.
+  </p>
+  <div class="data-table-wrap">
+    <table class="data-table">
+      <thead><tr>
+        <th>Confidence</th><th>Tracked</th><th>Settled</th>
+        <th>Wins</th><th>Hit rate</th>
+      </tr></thead>
+      <tbody>
+        {% for tier in health.confidence_tier_performance %}
+        <tr>
+          <td>
+            <span class="badge badge--conf badge--conf-{{ tier.confidence | lower | replace('-', '') }}">
+              {{ tier.confidence }}
+            </span>
+          </td>
+          <td>{{ tier.count }}</td>
+          <td>{{ tier.settled }}</td>
+          <td class="val--pos">{{ tier.wins }}</td>
+          <td>{% if tier.hit_rate is not none %}{{ tier.hit_rate }}%{% else %}—{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+{# ── Model notes ──────────────────────────────────────────────────────────── #}
+<section class="section">
+  <h2 class="section-title">Model Configuration</h2>
+  <ul class="model-notes">
+    {% for note in health.model_notes %}
+    <li>{{ note }}</li>
+    {% endfor %}
+  </ul>
+</section>
+
+{# ── CLV interpretation ───────────────────────────────────────────────────── #}
+{% if health.clv.count > 0 %}
+<section class="section">
+  <h2 class="section-title">Closing Line Value</h2>
+  <p class="section-desc">
+    CLV measures whether the model's probability exceeds the closing market price —
+    the tightest efficient estimate of true probability. Consistently positive CLV
+    is a stronger signal of genuine edge than win rate alone.
+  </p>
+  <div class="metrics-strip">
+    <div class="metric-card">
+      <div class="metric-label">Samples with CLV</div>
+      <div class="metric-value">{{ health.clv.count }}</div>
+    </div>
+    <div class="metric-card {% if health.clv.avg_clv > 0 %}metric-card--good{% else %}metric-card--bad{% endif %}">
+      <div class="metric-label">Average CLV</div>
+      <div class="metric-value">{{ "%.4f"|format(health.clv.avg_clv) }}</div>
+      <div class="metric-sub">Positive = model beats market close</div>
+    </div>
+    <div class="metric-card {% if health.clv.clv_positive_pct >= 55 %}metric-card--good{% else %}metric-card--neutral{% endif %}">
+      <div class="metric-label">CLV Positive %</div>
+      <div class="metric-value">{{ health.clv.clv_positive_pct }}%</div>
+      <div class="metric-sub">{{ health.clv.interpretation }}</div>
+    </div>
+  </div>
+</section>
+{% endif %}
+
+{% endif %}{# end if not error #}
+
+<script>
+{% if health.calibration_buckets %}
+(function() {
+  const buckets = {{ health.calibration_buckets | tojson }};
+  const labels = buckets.map(b => (b.predicted_rate * 100).toFixed(0) + '%');
+  const predicted = buckets.map(b => +(b.predicted_rate * 100).toFixed(1));
+  const observed = buckets.map(b => +(b.observed_rate * 100).toFixed(1));
+
+  const ctx = document.getElementById('calChart').getContext('2d');
+  new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Observed win rate',
+          data: observed,
+          backgroundColor: 'rgba(99, 180, 255, 0.75)',
+          borderColor: '#63b4ff',
+          borderWidth: 1,
+        },
+        {
+          label: 'Perfect calibration',
+          data: predicted,
+          type: 'line',
+          borderColor: '#e67e22',
+          borderDash: [5, 4],
+          borderWidth: 2,
+          pointRadius: 0,
+          fill: false,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { labels: { color: '#ccc' } },
+        tooltip: {
+          callbacks: {
+            label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y}%`,
+          },
+        },
+      },
+      scales: {
+        x: { ticks: { color: '#aaa' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+        y: {
+          ticks: { color: '#aaa', callback: v => v + '%' },
+          grid: { color: 'rgba(255,255,255,0.05)' },
+          min: 0, max: 100,
+        },
+      },
+    },
+  });
+})();
+{% endif %}
+</script>
+{% endblock %}

@@ -81,7 +81,7 @@
       {% if edge_pct %}
       <div class="bcv2-edge-bar">
         <div class="edge-bar-wrap">
-          <div class="edge-bar-fill {% if edge_pct >= 10 %}edge-bar-fill--high{% endif %}" style="width:{{ [edge_pct * 5, 100]|min }}%"></div>
+          <div class="edge-bar-fill {% if edge_pct >= 10 %}edge-bar-fill--high{% elif edge_pct >= 6 %}edge-bar-fill--medium{% else %}edge-bar-fill--low{% endif %}" style="width:{{ [edge_pct * 5, 100]|min }}%"></div>
         </div>
         <span class="bcv2-edge-label">{{ edge_pct }}% edge</span>
       </div>

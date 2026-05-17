@@ -246,28 +246,61 @@ def run_check(fetch: bool = True, regions: str = "us", markets: str = DEFAULT_MA
 
 
 def print_summary(report: dict) -> None:
-    print("\n" + "=" * 72)
-    print("  OCTAGON IQ ODDS MOVEMENT CHECK")
-    print("=" * 72)
-    print(f"  Markets compared: {report['markets_compared']}")
-    print(f"  Noteworthy moves: {report['noteworthy_count']}")
-    print(f"  Report: {MOVEMENT_JSON}")
-    print(f"  CSV:    {MOVEMENT_CSV}\n")
+    print("\n" + "=" * 80)
+    print("  OCTAGON IQ — ODDS MOVEMENT CHECK")
+    print("=" * 80)
+    print(f"  Markets compared : {report['markets_compared']}")
+    print(f"  Significant moves: {report.get('significant_move_count', report.get('noteworthy_count', 0))}")
+    print()
 
-    if not report["noteworthy"]:
-        print("  No notable price movement or value shifts found.\n")
+    if not report["rows"]:
+        print("  No priced markets found.\n")
         return
 
-    print(f"  {'FIGHT':<34} {'MARKET':<18} {'OLD':>6} {'NOW':>6} {'MOVE':>8}  LABEL")
-    print("-" * 72)
-    for row in report["noteworthy"][:12]:
-        fight = row["fight"][:33]
-        market = row["market"][:17]
-        old = f"{row['old_decimal_odds']:.2f}" if isinstance(row["old_decimal_odds"], (int, float)) else "--"
-        now = f"{row['new_decimal_odds']:.2f}" if isinstance(row["new_decimal_odds"], (int, float)) else "--"
-        move = f"{row['decimal_move']:+.2f}" if isinstance(row["decimal_move"], (int, float)) else "--"
-        print(f"  {fight:<34} {market:<18} {old:>6} {now:>6} {move:>8}  {row['movement_label']} / {row['value_label']}")
-    print()
+    # Group all rows by fight
+    fights_seen: dict[str, list] = {}
+    for row in report["rows"]:
+        fights_seen.setdefault(row["fight"], []).append(row)
+
+    for fight, markets in fights_seen.items():
+        # Header line — show model side from first row that has it
+        conf  = markets[0].get("confidence", "")
+        edge  = markets[0].get("edge")
+        label = markets[0].get("value_label", "")
+        print(f"  {fight}  [{conf}]")
+        print(f"  {'MARKET':<36} {'SELECTION':<28} {'OLD':>6} {'NOW':>6} {'MOVE':>7}  {'MOVEMENT':<12} {'LABEL'}")
+        print("  " + "-" * 110)
+        for row in markets:
+            market  = row["market"][:35]
+            sel     = row["selection"][:27]
+            old     = f"{row['old_decimal_odds']:.2f}" if isinstance(row["old_decimal_odds"], (int, float)) else "  new"
+            now     = f"{row['new_decimal_odds']:.2f}" if isinstance(row["new_decimal_odds"], (int, float)) else "   --"
+            move    = f"{row['decimal_move']:+.2f}" if isinstance(row["decimal_move"], (int, float)) else "     "
+            mv_lbl  = row["movement_label"]
+            v_lbl   = row["value_label"] or ""
+            sig     = " *" if row.get("significant_move") else "  "
+            print(f"  {market:<36} {sel:<28} {old:>6} {now:>6} {move:>7}  {mv_lbl:<12} {v_lbl}{sig}")
+        print()
+
+    # Highlight the most significant movers at the bottom
+    movers = [r for r in report["rows"] if r.get("significant_move")]
+    if movers:
+        print("=" * 80)
+        print(f"  SIGNIFICANT MOVES  (* = flagged above)")
+        print("=" * 80)
+        movers_sorted = sorted(
+            movers,
+            key=lambda r: abs(r["decimal_move"]) if isinstance(r.get("decimal_move"), (int, float)) else 0,
+            reverse=True,
+        )
+        for row in movers_sorted[:10]:
+            fight  = row["fight"][:38]
+            sel    = row["selection"][:22]
+            old    = f"{row['old_decimal_odds']:.2f}" if isinstance(row["old_decimal_odds"], (int, float)) else "--"
+            now    = f"{row['new_decimal_odds']:.2f}" if isinstance(row["new_decimal_odds"], (int, float)) else "--"
+            move   = f"{row['decimal_move']:+.2f}" if isinstance(row["decimal_move"], (int, float)) else "--"
+            print(f"  {fight:<38} {sel:<22} {old} -> {now}  ({move})  {row['movement_label']} / {row['value_label']}")
+        print()
 
 
 def main() -> None:

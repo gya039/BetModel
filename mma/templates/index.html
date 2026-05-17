@@ -1,511 +1,767 @@
-{% extends "base.html" %}
-{% block title %}Octagon IQ - Fight-Night Bankroll Command{% endblock %}
+{% extends "base-redesign.html" %}
+{% block title %}Octagon IQ — {{ (card.get('event_name') or 'UFC Fight Night').replace('vs.','vs') }}{% endblock %}
+
+{% block head %}
+<style>
+/* ── Signal Board ── */
+.signal-board{
+  display:flex;flex-direction:column;gap:1px;
+  background:var(--line);
+  border:1px solid rgba(25,200,160,.18);
+  border-radius:12px;overflow:hidden;width:100%;
+  box-shadow:0 0 0 1px rgba(25,200,160,.06),0 0 48px rgba(25,200,160,.06);
+}
+.signal-row{display:grid;grid-template-columns:48px 1fr 160px 100px 60px 96px 16px;gap:14px;align-items:center;padding:16px 22px;background:var(--bg-1);transition:background .2s;color:var(--text);text-decoration:none;overflow:hidden;min-width:0}
+.signal-row:hover{background:var(--bg-2)}
+.signal-row--hot{
+  border-left:3px solid var(--teal);
+  background:linear-gradient(90deg,rgba(25,200,160,.07) 0%,var(--bg-1) 35%);
+}
+.signal-row--hot:hover{background:linear-gradient(90deg,rgba(25,200,160,.1) 0%,var(--bg-2) 35%)}
+.signal-row--value{
+  border-left:3px solid var(--amber);
+  background:linear-gradient(90deg,rgba(245,185,66,.06) 0%,var(--bg-1) 35%);
+}
+.sbout{font-family:var(--display);font-weight:600;font-size:20px;color:var(--text-dim);line-height:1}
+.sbout small{display:block;font-family:var(--mono);font-size:9px;letter-spacing:.16em;color:var(--text-faint);text-transform:uppercase;margin-top:2px;font-weight:400}
+.sfight strong{font-family:var(--display);font-weight:600;font-size:14px;text-transform:uppercase;letter-spacing:.02em;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sfight span{font-family:var(--mono);font-size:10px;color:var(--text-dim);letter-spacing:.06em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;margin-top:2px}
+.slean strong{font-family:var(--display);font-weight:600;font-size:13px;text-transform:uppercase;letter-spacing:.02em;display:block;color:var(--teal)}
+.slean span{font-family:var(--mono);font-size:10px;color:var(--text-2);letter-spacing:.08em}
+.sprobs{font-family:var(--mono);font-size:10px;letter-spacing:.08em;display:flex;flex-direction:column;gap:3px;color:var(--text-dim)}
+.sprobs .fn{color:var(--red)}
+.sedge{font-family:var(--display);font-weight:600;font-size:15px;text-align:right}
+.sedge--prime{color:var(--teal-bright)}.sedge--strong{color:var(--teal)}.sedge--min{color:var(--amber)}.sedge--none{color:var(--text-faint);font-size:12px}
+.slabel-wrap{display:flex;justify-content:flex-end}
+.slabel{font-family:var(--mono);font-size:9px;letter-spacing:.14em;text-transform:uppercase;padding:3px 7px;border-radius:4px;display:inline-block}
+.slabel--best-bet{background:rgba(25,200,160,.12);color:var(--teal);border:1px solid rgba(25,200,160,.28)}
+.slabel--value{background:rgba(245,185,66,.1);color:var(--amber);border:1px solid rgba(245,185,66,.28)}
+.slabel--skip{background:rgba(255,255,255,.03);color:var(--text-dim);border:1px solid var(--line-2)}
+.sarrow{color:var(--text-faint);transition:transform .2s,color .2s;display:flex;align-items:center}
+.signal-row:hover .sarrow{color:var(--teal);transform:translateX(3px)}
+.signal-board-header{display:grid;grid-template-columns:48px 1fr 160px 100px 60px 96px 16px;gap:14px;padding:9px 20px;font-family:var(--mono);font-size:9px;letter-spacing:.18em;text-transform:uppercase;color:var(--text-faint);border-bottom:1px solid var(--line)}
+
+/* ── Stakes / Singles ── */
+.stakes-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
+.stake-card{
+  background:var(--bg-1);border:1px solid var(--line);border-radius:10px;padding:20px;
+  display:flex;flex-direction:column;gap:12px;
+  transition:border-color .25s,box-shadow .25s,transform .25s;
+  text-decoration:none;color:var(--text);
+}
+.stake-card:hover{border-color:var(--line-2);transform:translateY(-2px)}
+.stake-card--hot{
+  border-color:rgba(25,200,160,.32);
+  box-shadow:0 0 0 1px rgba(25,200,160,.08),0 4px 24px rgba(25,200,160,.1),inset 0 1px 0 rgba(25,200,160,.12);
+  background:linear-gradient(180deg,rgba(25,200,160,.04),var(--bg-1) 60%);
+}
+.stake-card--hot:hover{box-shadow:0 0 0 1px rgba(25,200,160,.16),0 8px 32px rgba(25,200,160,.15),inset 0 1px 0 rgba(25,200,160,.18)}
+.stake-card--value{
+  border-color:rgba(245,185,66,.28);
+  box-shadow:0 0 0 1px rgba(245,185,66,.06),0 4px 20px rgba(245,185,66,.08);
+  background:linear-gradient(180deg,rgba(245,185,66,.03),var(--bg-1) 60%);
+}
+.stake-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.stake-selection{font-family:var(--display);font-weight:600;font-size:17px;text-transform:uppercase;letter-spacing:.02em;line-height:1;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stake-odds{font-family:var(--display);font-weight:600;font-size:24px;color:var(--text);flex-shrink:0}
+.stake-fight{font-family:var(--mono);font-size:10px;color:var(--text-2);letter-spacing:.06em;line-height:1.4}
+.stake-metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:0;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+.stake-metric{padding:10px 12px;border-right:1px solid var(--line)}
+.stake-metric:last-child{border-right:none}
+.stake-metric span{font-family:var(--mono);font-size:9px;letter-spacing:.16em;color:var(--text-dim);text-transform:uppercase;display:block;margin-bottom:4px}
+.stake-metric strong{font-family:var(--display);font-weight:500;font-size:15px;display:block}
+.stake-metric strong.pos{color:var(--teal)}
+.stake-footer{display:flex;justify-content:space-between;align-items:center;padding-top:10px;border-top:1px solid var(--line)}
+.stake-book{font-family:var(--mono);font-size:9px;letter-spacing:.14em;color:var(--text-dim);text-transform:uppercase}
+.stake-conf{font-family:var(--mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase}
+.stake-conf.high{color:var(--teal)}.stake-conf.medium{color:var(--amber)}.stake-conf.low{color:var(--red)}
+
+/* ── Accumulator ── */
+.acca-card{
+  background:linear-gradient(135deg,var(--bg-1),rgba(25,200,160,.05));
+  border:1px solid rgba(25,200,160,.22);border-radius:12px;padding:28px;margin-top:16px;
+  box-shadow:0 0 0 1px rgba(25,200,160,.06),0 8px 40px rgba(25,200,160,.08);
+}
+.acca-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;flex-wrap:wrap;gap:10px}
+.acca-type{font-family:var(--mono);font-size:9px;letter-spacing:.2em;color:var(--teal);text-transform:uppercase;margin-bottom:4px}
+.acca-title{font-family:var(--display);font-weight:600;font-size:20px;text-transform:uppercase;letter-spacing:.02em}
+.acca-odds-big{font-family:var(--display);font-weight:700;font-size:44px;color:var(--teal);line-height:.9;letter-spacing:-.02em}
+.acca-odds-lbl{font-family:var(--mono);font-size:9px;letter-spacing:.18em;color:var(--teal);text-transform:uppercase;margin-top:4px}
+.acca-legs{display:flex;flex-direction:column;gap:6px;margin-bottom:16px}
+.acca-leg{display:flex;align-items:center;gap:12px;padding:9px 14px;background:rgba(25,200,160,.04);border-radius:7px;border:1px solid rgba(25,200,160,.1)}
+.acca-leg-num{font-family:var(--display);font-weight:500;font-size:16px;color:var(--text-dim);width:20px;flex-shrink:0}
+.acca-leg-info{flex:1;min-width:0}
+.acca-leg-info strong{font-family:var(--display);font-weight:600;font-size:13px;text-transform:uppercase;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.acca-leg-info span{font-family:var(--mono);font-size:10px;color:var(--text-dim);letter-spacing:.06em}
+.acca-leg-odds{font-family:var(--display);font-weight:500;font-size:15px;color:var(--teal);flex-shrink:0}
+.acca-stats{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.acca-stat{padding:12px 16px;border-right:1px solid var(--line)}
+.acca-stat:last-child{border-right:none}
+.acca-stat span{font-family:var(--mono);font-size:9px;letter-spacing:.18em;color:var(--text-dim);text-transform:uppercase;display:block;margin-bottom:5px}
+.acca-stat strong{font-family:var(--display);font-weight:500;font-size:19px}
+.acca-stat strong.pos{color:var(--teal)}
+
+/* ── Pending bets pill strip ── */
+.pending-strip{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.pending-pill{font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;padding:4px 10px;border-radius:99px;background:rgba(245,185,66,.07);border:1px solid rgba(245,185,66,.18);color:var(--amber)}
+
+/* ── Method badge ── */
+.method-tag{font-family:var(--mono);font-size:9px;letter-spacing:.14em;text-transform:uppercase;padding:2px 7px;border-radius:4px;background:rgba(239,58,58,.1);color:var(--red);border:1px solid rgba(239,58,58,.22)}
+
+/* ── Responsive overrides ── */
+@media(max-width:1100px){
+  .signal-row{grid-template-columns:44px 1fr 140px 92px 56px 82px 0;gap:12px}
+  .signal-board-header{grid-template-columns:44px 1fr 140px 92px 56px 82px 0}
+}
+@media(max-width:900px){
+  .signal-row{grid-template-columns:40px 1fr 130px 52px 78px;gap:10px}
+  .signal-board-header{grid-template-columns:40px 1fr 130px 52px 78px}
+  .sprobs,.sarrow{display:none}
+}
+@media(max-width:700px){
+  .signal-board-header{display:none}
+  .signal-row{grid-template-columns:1fr auto;grid-template-rows:auto auto;padding:12px 14px;gap:4px 10px;align-items:start}
+  .sbout{display:none}
+  .sfight{grid-column:1;grid-row:1}
+  .sfight strong{font-size:13px;white-space:normal}
+  .slean{grid-column:1;grid-row:2;display:flex;flex-direction:row;align-items:center;gap:6px}
+  .slean strong{font-size:12px}.slean span{font-size:9px}
+  .sedge{grid-column:2;grid-row:1;font-size:16px;align-self:center;text-align:right}
+  .slabel-wrap{grid-column:2;grid-row:2;justify-content:flex-end}
+  .sprobs,.sarrow{display:none}
+  .stakes-grid{grid-template-columns:1fr}
+  .acca-stats{grid-template-columns:1fr 1fr}
+  .acca-card{padding:18px}
+  .acca-odds-big{font-size:32px}
+  .stake-card{padding:14px}
+}
+@media(max-width:480px){
+  .stake-metrics{grid-template-columns:1fr 1fr}
+  .stake-metric:last-child{border-top:1px solid var(--line);border-right:none;grid-column:span 2}
+  .acca-stats{grid-template-columns:1fr}
+  .acca-stat{border-right:none;border-bottom:1px solid var(--line)}
+  .acca-stat:last-child{border-bottom:none}
+}
+</style>
+{% endblock %}
 
 {% block content %}
 
-{% set singles = plan.get('singles', []) %}
-{% set accas = plan.get('accumulators', []) %}
-{% set history = plan.get('history', []) %}
-{% set bankroll = plan.get('bankroll', 500) %}
-{% set base_bankroll = plan.get('base_bankroll', 500) %}
-{% set pnl = bankroll - base_bankroll %}
-{% set total_exposure = (plan.get('total_single_stake', 0) or 0) + (plan.get('total_accumulator_stake', 0) or 0) %}
-{% set top_pick = singles[0] if singles else none %}
-{% set top_acca = accas[0] if accas else none %}
-{% set total_bouts = matchups|length %}
-{% set main_count = 5 if total_bouts >= 13 else ((total_bouts + 1) // 2) %}
-{% set prelim_count = 4 if total_bouts >= 13 else (total_bouts - main_count) %}
-{% set main_card = matchups[:main_count] %}
-{% set prelim_card = matchups[main_count:main_count + prelim_count] %}
-{% set early_prelim_card = matchups[main_count + prelim_count:] %}
-{% set placed_bets = singles + accas %}
-{% set bet_count = placed_bets|length %}
-{% set event_title = (card.get('event_name') or 'UFC Fight Night: Sterling vs Zalal').replace('vs.', 'vs') %}
-{% set main_event = matchups[0] if matchups else none %}
-{% set left_fighter = main_event.fighter_a if main_event else none %}
-{% set right_fighter = main_event.fighter_b if main_event else none %}
-{% set left_lookup = (fighters | selectattr('fighter_id', 'equalto', left_fighter.get('fighter_id')) | list | first) if left_fighter else none %}
-{% set right_lookup = (fighters | selectattr('fighter_id', 'equalto', right_fighter.get('fighter_id')) | list | first) if right_fighter else none %}
-{% set left_fighter_photo = left_fighter.get('photo') if left_fighter and left_fighter.get('photo') else (left_lookup.get('photo') if left_lookup and left_lookup.get('photo') else none) %}
-{% set right_fighter_photo = right_fighter.get('photo') if right_fighter and right_fighter.get('photo') else (right_lookup.get('photo') if right_lookup and right_lookup.get('photo') else none) %}
-{% set event_location = card.get('event_location', 'Las Vegas, Nevada, USA') %}
-{% set featured_weight_class = main_event.weight_class if main_event else 'Main Event' %}
-{% set left_record = ((left_fighter.get('wins', '?') ~ '-' ~ left_fighter.get('losses', '?')) ~ ('-' ~ left_fighter.get('draws', 0) if left_fighter and left_fighter.get('draws') else '')) if left_fighter else '' %}
-{% set right_record = ((right_fighter.get('wins', '?') ~ '-' ~ right_fighter.get('losses', '?')) ~ ('-' ~ right_fighter.get('draws', 0) if right_fighter and right_fighter.get('draws') else '')) if right_fighter else '' %}
-{% set returns = namespace(total=0) %}
-{% for pick in singles %}
-  {% set returns.total = returns.total + (pick.potential_return or 0) %}
-{% endfor %}
-{% for acca in accas %}
-  {% set returns.total = returns.total + (acca.potential_return or 0) %}
-{% endfor %}
+{# ── Variable setup ─────────────────────────────────────────────────────────── #}
+{% set singles        = plan.get('singles', []) %}
+{% set accas          = plan.get('accumulators', []) %}
+{% set bankroll       = plan.get('bankroll', 500) %}
+{% set base_bankroll  = plan.get('base_bankroll', 500) %}
+{% set pnl            = bankroll - base_bankroll %}
+{% set single_stake   = plan.get('total_single_stake', 0) or 0 %}
+{% set acca_stake     = plan.get('total_accumulator_stake', 0) or 0 %}
+{% set total_exposure = single_stake + acca_stake %}
+{% set pending_bets   = plan.get('pending_bets', []) %}
+{% set top_acca       = accas[0] if accas else none %}
+{% set top_pick       = singles[0] if singles else none %}
+{% set total_bouts    = matchups|length %}
+{% set main_count     = 5 if total_bouts >= 13 else ((total_bouts + 1) // 2) %}
+{% set prelim_count   = 4 if total_bouts >= 13 else (total_bouts - main_count) %}
+{% set main_card      = matchups[:main_count] %}
+{% set prelim_card    = matchups[main_count:main_count + prelim_count] %}
+{% set early_card     = matchups[main_count + prelim_count:] %}
+{% set event_title    = (card.get('event_name') or 'UFC Fight Night').replace('vs.','vs') %}
+{% set event_location = card.get('event_location', 'Las Vegas, Nevada') %}
+{% set main_event     = matchups[0] if matchups else none %}
+{% set left_fighter   = main_event.fighter_a if main_event else none %}
+{% set right_fighter  = main_event.fighter_b if main_event else none %}
+{% set weight_class   = main_event.weight_class if main_event else 'Main Event' %}
+{% set city           = event_location.split(',')[0] if event_location else 'UFC' %}
+{% set left_record    = ((left_fighter.get('wins','?') ~ '-' ~ left_fighter.get('losses','?')) ~ ('-' ~ left_fighter.get('draws',0) if left_fighter and left_fighter.get('draws') else '')) if left_fighter else '' %}
+{% set right_record   = ((right_fighter.get('wins','?') ~ '-' ~ right_fighter.get('losses','?')) ~ ('-' ~ right_fighter.get('draws',0) if right_fighter and right_fighter.get('draws') else '')) if right_fighter else '' %}
+{% set best_bets      = betting | selectattr('playable_label','equalto','Best Bet') | list %}
+{% set value_bets     = betting | selectattr('playable_label','equalto','Value') | list %}
+{% set returns_total  = namespace(v=0) %}
+{% for s in singles %}{% set returns_total.v = returns_total.v + (s.potential_return or 0) %}{% endfor %}
+{% for a in accas %}{% set returns_total.v = returns_total.v + (a.potential_return or 0) %}{% endfor %}
 
-<section class="fight-header-banner" id="fightHeader" data-event-date="{{ card.get('event_date', 'April 25, 2026') }}">
-  <div class="fight-header-banner__shell">
-    <div class="fight-header-banner__bg" aria-hidden="true"></div>
-    <div class="fight-header-banner__mesh" aria-hidden="true"></div>
-    <div class="fight-header-banner__inner banner-content">
-      <div class="fight-header-banner__side fight-header-banner__side--left" aria-hidden="true">
-        <div class="fight-header-banner__panel fight-header-banner__panel--rear"></div>
-        <div class="fight-header-banner__panel fight-header-banner__panel--mid"></div>
-        <div class="fight-header-banner__panel fight-header-banner__panel--front"></div>
-        <div class="fight-header-banner__edge"></div>
-        {% if left_fighter %}
-        <div class="hero-fighter-card hero-fighter-card-left">
-          {% if left_fighter_photo %}
-            <img src="{{ left_fighter_photo }}" alt="{{ left_fighter.get('name', 'Left fighter') }}">
-          {% endif %}
-          <div class="hero-fighter-info">
-            <h3>{{ left_fighter.get('name', 'TBA') }}</h3>
-            <p>{{ left_record }}</p>
-            {% if left_fighter.get('odds') %}
-            <span>{{ left_fighter.get('odds') }}</span>
-            {% endif %}
-          </div>
-        </div>
-        {% endif %}
+{# ── HERO ──────────────────────────────────────────────────────────────────── #}
+<section class="hero {% if hero_img %}hero--has-image{% endif %}" aria-label="Featured fight" data-event-date="{{ card.get('event_date','') }}">
+  <div class="hero-stage"></div>
+
+  {% if hero_img %}
+  {# AI-generated face-off image — sits below all gradient overlays #}
+  <img class="hero-bg-img" src="{{ hero_img }}" alt="{{ event_title }} face-off" loading="eager">
+  {% else %}
+  {# SVG silhouette fallback while image is being generated #}
+  <div class="hero-figs">
+    <div class="hero-fig left">
+      <div class="ph"></div>
+      <div class="silhouette">
+        <svg viewBox="0 0 200 380" xmlns="http://www.w3.org/2000/svg">
+          <path d="M100 18c-14 0-26 12-26 28 0 18 12 30 26 30s26-12 26-30c0-16-12-28-26-28zM60 86c-6 14-8 38-8 60 0 14 4 32 12 42-12 4-22 14-26 30-4 18 0 56 6 100 6 38 12 60 16 64h12c4-12 0-44-4-72-4-28-2-44 6-52 8-8 16-2 22 6 8 12 12 30 14 60 2 26 4 38 6 42h12c4-12 6-32 6-58 0-30 4-38 16-42 12-2 22 4 30 12-2-28-12-46-26-54 8-12 12-30 12-44 0-22-2-46-8-60-10-22-32-32-58-32s-48 10-58 32z"/>
+        </svg>
       </div>
-
-      <div class="fight-header-banner__center">
-        <div class="fight-header-banner__brand">UFC</div>
-        <div class="fight-header-banner__timer" id="fightCountdown" aria-label="Countdown to event">
-          <span id="fnDays">00</span>
-          <span>Days</span>
-          <em></em>
-          <span id="fnHours">00</span>
-          <span>Hrs</span>
-          <em></em>
-          <span id="fnMins">00</span>
-          <span>Min</span>
-        </div>
-        <div class="fight-header-banner__live" id="fnLive" hidden>Live Now</div>
-        <div class="fight-header-banner__title-lockup">
-          <span class="fight-header-banner__title-kicker">UFC</span>
-          <h2>Fight <span>Night</span></h2>
-        </div>
-        <div class="fight-header-banner__location">
-          <span>{{ featured_weight_class }}</span>
-          <strong>{{ event_location }}</strong>
-        </div>
-      </div>
-
-      <div class="fight-header-banner__side fight-header-banner__side--right" aria-hidden="true">
-        <div class="fight-header-banner__panel fight-header-banner__panel--rear"></div>
-        <div class="fight-header-banner__panel fight-header-banner__panel--mid"></div>
-        <div class="fight-header-banner__panel fight-header-banner__panel--front"></div>
-        <div class="fight-header-banner__edge"></div>
-        {% if right_fighter %}
-        <div class="hero-fighter-card hero-fighter-card-right">
-          {% if right_fighter_photo %}
-            <img src="{{ right_fighter_photo }}" alt="{{ right_fighter.get('name', 'Right fighter') }}">
-          {% endif %}
-          <div class="hero-fighter-info">
-            <h3>{{ right_fighter.get('name', 'TBA') }}</h3>
-            <p>{{ right_record }}</p>
-            {% if right_fighter.get('odds') %}
-            <span>{{ right_fighter.get('odds') }}</span>
-            {% endif %}
-          </div>
-        </div>
-        {% endif %}
+    </div>
+    <div class="hero-fig right">
+      <div class="ph"></div>
+      <div class="silhouette">
+        <svg viewBox="0 0 200 380" xmlns="http://www.w3.org/2000/svg">
+          <path d="M100 20c-15 0-28 13-28 30 0 19 13 32 28 32s28-13 28-32c0-17-13-30-28-30zM58 90c-8 16-10 40-10 60 0 16 6 34 14 44-14 4-24 16-28 32-2 16 4 54 10 96 6 40 12 62 16 66h12c4-12 0-46-4-72-2-26 0-44 8-52 10-8 18-4 24 6 6 12 10 30 12 60 2 26 4 38 6 42h12c4-14 6-32 6-58 0-32 4-40 16-42 14-2 24 4 32 14-2-28-14-48-28-56 8-12 12-30 12-46 0-22-2-44-10-60-10-22-32-34-58-34s-44 10-52 30z"/>
+        </svg>
       </div>
     </div>
   </div>
+  {% endif %}
 
-  <div class="fight-header-banner__ticker">
-    <span>{{ event_title }}</span>
-    <em></em>
-    <span>{{ total_bouts }} fights</span>
-    <em></em>
-    <span>{{ event_location }}</span>
-    <em></em>
-    {% if left_fighter and right_fighter %}
-    <span>{{ left_fighter.name }} vs {{ right_fighter.name }}</span>
-    {% else %}
-    <span>Fight card loaded</span>
-    {% endif %}
-  </div>
-</section>
-
-<section class="command-hero">
-  <img class="hero-bg" src="{{ url_for('static', filename='assets/octagon-arena.png') }}" alt="" aria-hidden="true">
-  <div class="hero-overlay" aria-hidden="true"></div>
-  <div class="arena-grid" aria-hidden="true"></div>
-  <div class="scanner-line" aria-hidden="true"></div>
+  <div class="hero-grid"></div>
+  <div class="hero-center-grad"></div>
+  <div class="hero-vignette"></div>
 
   <div class="hero-content">
-    <div class="command-hero__copy">
-      <div class="hero-kicker">
-        <span class="status-dot"></span>
-        Fight-night bankroll engine
-      </div>
-      <h1>Octagon IQ</h1>
-      <p class="command-hero__sub">
-        Live odds, edge detection, stake control, accumulators, and UFC matchup intelligence in one combat-sports command center.
-      </p>
-      <div class="command-actions">
-        <a href="/bankroll" class="btn btn--neon">Open Bankroll</a>
-        <a href="/betting" class="btn btn--ice">View Betting Board</a>
-        <a href="/check-movement" class="btn btn--ghost">Check Movement</a>
-      </div>
-      <div class="hero-signal-row" aria-label="Platform signals">
-        <span><strong>Live odds</strong> synced</span>
-        <span><strong>Risk</strong> capped</span>
-        <span><strong>Edge</strong> ranked</span>
-      </div>
+    <div class="eyebrow-row">
+      <span class="live-dot"></span>
+      <span class="eyebrow">{{ event_title }}{% if card.get('event_date') %} · {{ card.event_date }}{% endif %} · {{ city }}</span>
+    </div>
+    <h1 class="hero-title">
+      {% if left_fighter and right_fighter %}
+        <span class="red">{{ left_fighter.get('name','TBA').split()[-1] }}</span>
+        <span class="vs">vs</span>
+        <span class="teal">{{ right_fighter.get('name','TBA').split()[-1] }}</span>
+      {% else %}
+        <span class="red">Octagon</span><span class="vs">IQ</span><span class="teal">Live</span>
+      {% endif %}
+    </h1>
+    <div class="hero-sub">{{ weight_class }} · <span>{{ total_bouts }} Bouts</span> · {{ city }}</div>
+    <div class="hero-countdown">
+      <div class="cell"><div class="v" id="cd-days">--</div><div class="l">Days</div></div>
+      <div class="cell"><div class="v" id="cd-hours">--</div><div class="l">Hours</div></div>
+      <div class="cell"><div class="v" id="cd-mins">--</div><div class="l">Min</div></div>
+      <div class="cell"><div class="v" id="cd-secs">--</div><div class="l">Sec</div></div>
+    </div>
+    <div class="hero-cta-row">
+      <a class="btn primary" href="/betting">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>
+        Betting Board
+      </a>
+      <a class="btn" href="/bankroll">Bankroll</a>
+      <a class="btn ghost" href="/check-movement">Movement →</a>
     </div>
   </div>
 
+  {% if left_fighter or right_fighter %}
+  <div class="hero-corner">
+    {% if left_fighter %}
+    <div class="fighter-meta red">
+      <span class="corner-tag"><span class="sq red"></span>Red Corner</span>
+      {% if left_fighter.get('nickname') %}<span class="nick">"{{ left_fighter.nickname }}"</span>{% endif %}
+      <span class="name">{{ left_fighter.get('name','TBA') }}</span>
+      <div class="stats">
+        <span>Record<b>{{ left_record or '?-?' }}</b></span>
+        {% if left_fighter.get('reach') %}<span>Reach<b>{{ left_fighter.reach }}"</b></span>{% endif %}
+        {% if left_fighter.get('stance') %}<span>Stance<b>{{ left_fighter.stance[:2]|upper }}</b></span>{% endif %}
+        {% if left_fighter.get('age') %}<span>Age<b>{{ left_fighter.age }}</b></span>{% endif %}
+        {% if left_fighter.get('odds') %}<span>Odds<b>{{ left_fighter.odds }}</b></span>{% endif %}
+      </div>
+    </div>
+    {% endif %}
+    {% if right_fighter %}
+    <div class="fighter-meta right teal">
+      <span class="corner-tag"><span class="sq teal"></span>Blue Corner</span>
+      {% if right_fighter.get('nickname') %}<span class="nick">"{{ right_fighter.nickname }}"</span>{% endif %}
+      <span class="name">{{ right_fighter.get('name','TBA') }}</span>
+      <div class="stats" style="justify-content:flex-end">
+        <span>Record<b>{{ right_record or '?-?' }}</b></span>
+        {% if right_fighter.get('reach') %}<span>Reach<b>{{ right_fighter.reach }}"</b></span>{% endif %}
+        {% if right_fighter.get('stance') %}<span>Stance<b>{{ right_fighter.stance[:2]|upper }}</b></span>{% endif %}
+        {% if right_fighter.get('age') %}<span>Age<b>{{ right_fighter.age }}</b></span>{% endif %}
+        {% if right_fighter.get('odds') %}<span>Odds<b>{{ right_fighter.odds }}</b></span>{% endif %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+  <div class="scroll-cue">Scroll<div class="line"></div></div>
+
+  {% if hero_img %}
+  <button class="hero-regen" id="heroRegen" title="Regenerate AI image">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+    Regen Image
+  </button>
+  {% else %}
+  <div class="hero-generating" id="heroGenerating">
+    <span class="dot"></span>Generating hero image…
+  </div>
+  {% endif %}
 </section>
 
-<section class="top-command-grid">
-  <div class="hero-console hero-console--dock">
-    <div class="console-topline">
-      <span>Bankroll Core</span>
-      <strong><span class="live-dot" style="display:inline-block;vertical-align:middle;margin-right:0.35rem"></span>ARMED</strong>
-    </div>
-    <div class="bankroll-readout">
-      <span>Current Bank</span>
-      <strong>EUR {{ "%.2f"|format(bankroll) }}</strong>
-      <small class="{% if pnl >= 0 %}profit{% else %}loss{% endif %}">
-        {{ "%+.2f"|format(pnl) }} from EUR {{ "%.2f"|format(base_bankroll) }}
-      </small>
-    </div>
-    <div class="console-metrics">
-      <div>
-        <span>Singles</span>
-        <strong>{{ singles|length }}</strong>
-      </div>
-      <div>
-        <span>Exposure</span>
-        <strong>EUR {{ "%.2f"|format(total_exposure) }}</strong>
-      </div>
-      <div>
-        <span>Accas</span>
-        <strong>{{ accas|length }}</strong>
-      </div>
-    </div>
+{# ── TICKER ─────────────────────────────────────────────────────────────────── #}
+{% if matchups %}
+<div class="ticker-band">
+  <div class="ticker-track">
+    {% for m in matchups %}{% set fa = m.fighter_a %}{% set fb = m.fighter_b %}
+    <span class="ticker-item">
+      {% if loop.first %}<span class="badge">MAIN</span>
+      {% elif loop.index <= main_count %}<span class="badge" style="background:rgba(255,255,255,.05);color:var(--text-2);border-color:var(--line-2)">CARD</span>
+      {% endif %}
+      <b>{{ fa.get('name','').split()[-1]|upper }}/{{ fb.get('name','').split()[-1]|upper }}</b>
+      {% set bf = betting | selectattr('fight_id','equalto',[fa.fighter_id,fb.fighter_id]|sort|join('_')) | list | first %}
+      {% if bf and bf.best_priced_edge is number and bf.best_priced_edge > 0 %}
+        <span class="t-up">+{{ bf.best_priced_edge }}%</span>
+      {% endif %}
+      <span style="color:var(--text-faint)">{{ m.weight_class }}</span>
+    </span>
+    {% endfor %}
+    {% for m in matchups %}{% set fa = m.fighter_a %}{% set fb = m.fighter_b %}
+    <span class="ticker-item">
+      {% if loop.first %}<span class="badge">MAIN</span>{% endif %}
+      <b>{{ fa.get('name','').split()[-1]|upper }}/{{ fb.get('name','').split()[-1]|upper }}</b>
+      <span style="color:var(--text-faint)">{{ m.weight_class }}</span>
+    </span>
+    {% endfor %}
   </div>
+</div>
+{% endif %}
 
-  <div class="command-summary-card">
-    <div class="panel-header">
-      <span>Fight-Day Position</span>
-      <strong>{{ bet_count }} Bets</strong>
+{# ── BEST BET SPOTLIGHT ─────────────────────────────────────────────────────── #}
+{% if top_pick %}
+<section class="bestbet">
+  <div class="section-inner">
+    <div class="section-head">
+      <div class="left">
+        <span class="eyebrow red">● Tonight's Best Bet · IQ Pick · {{ best_bets|length }} plays qualify</span>
+        <h2>The edge <em>nobody's pricing in</em></h2>
+      </div>
+      <a class="section-link" href="/betting">Full Betting Board <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></a>
     </div>
-    <div class="command-summary-grid">
-      <div>
-        <span>Card</span>
-        <strong>{{ total_bouts }}</strong>
-        <small>fights loaded</small>
+    <div class="bestbet-card">
+      <div class="bestbet-left">
+        <div class="bestbet-pct">{{ top_pick.edge }}<sup>%</sup></div>
+        <div class="bestbet-conf">Edge · {{ top_pick.confidence }} Confidence · {{ top_pick.sportsbook }}</div>
       </div>
-      <div>
-        <span>Staked</span>
-        <strong>EUR {{ "%.2f"|format(total_exposure) }}</strong>
-        <small>singles + accas</small>
+      <div class="bestbet-right">
+        <span class="eyebrow dim">{{ top_pick.market }}{% if top_pick.get('bout_number') %} · Bout {{ top_pick.bout_number }}{% endif %}</span>
+        <h3>{{ top_pick.fight }}</h3>
+        <div class="pick-row">Pick <b>{{ top_pick.selection }} · {{ "%.2f"|format(top_pick.decimal_odds) }}</b> via {{ top_pick.sportsbook }}</div>
+        <div class="bestbet-stats">
+          <div><div class="l">Stake</div><div class="v">EUR {{ "%.2f"|format(top_pick.stake.eur) }}</div></div>
+          <div><div class="l">Return</div><div class="v teal">EUR {{ "%.2f"|format(top_pick.potential_return) }}</div></div>
+          <div><div class="l">Profit</div><div class="v teal">EUR {{ "%.2f"|format(top_pick.profit_if_win) }}</div></div>
+        </div>
+        <div class="bestbet-actions">
+          <a class="btn red" href="/betting/{{ top_pick.fight_id }}">Open Analysis →</a>
+          <a class="btn" href="/bankroll">Staking Plan</a>
+        </div>
       </div>
-      <div>
-        <span>Returns</span>
-        <strong>EUR {{ "%.2f"|format(returns.total) }}</strong>
-        <small>potential payout</small>
-      </div>
-    </div>
-    <div class="command-summary-actions">
-      <a href="/bankroll" class="btn btn--neon">Manage Stakes</a>
-      <a href="/betting" class="btn btn--ice">Open Board</a>
     </div>
   </div>
 </section>
+{% endif %}
 
-<section class="landing-section split-landing">
-  <div class="analysis-panel">
-    <div class="panel-header">
-      <span>Performance Preview</span>
-      <strong>Model Pulse</strong>
-    </div>
-    <div class="pulse-bars">
-      <div>
-        <span>Priced single count</span>
-        <strong>{{ singles|length }}</strong>
-        <div class="edge-bar-wrap" style="margin-top:0.4rem"><div class="edge-bar-fill" style="width: {{ [singles|length * 14, 100] | min }}%"></div></div>
+{# ── MODEL SIGNAL BOARD ─────────────────────────────────────────────────────── #}
+{% if betting %}
+<section class="section--alt">
+  <div class="section-inner">
+    <div class="section-head">
+      <div class="left">
+        <span class="eyebrow">⚙ Model Output · {{ betting|length }} fights scored</span>
+        <h2>Signal <em>board</em></h2>
       </div>
-      <div>
-        <span>Accumulator builds</span>
-        <strong>{{ accas|length }}</strong>
-        <div class="edge-bar-wrap" style="margin-top:0.4rem"><div class="edge-bar-fill" style="width: {{ [accas|length * 28, 100] | min }}%"></div></div>
-      </div>
-      {% set exposure_pct = (total_exposure / bankroll * 100) if bankroll else 0 %}
-      <div>
-        <span>Exposure discipline</span>
-        <strong>{{ "%.1f"|format(exposure_pct) }}%</strong>
-        <div class="edge-bar-wrap" style="margin-top:0.4rem"><div class="edge-bar-fill {% if exposure_pct > 50 %}edge-bar-fill--danger{% endif %}" style="width: {{ [exposure_pct, 100] | min }}%"></div></div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <span style="font-family:var(--mono);font-size:10px;letter-spacing:.18em;color:var(--text-dim);text-transform:uppercase">{{ best_bets|length }} Best Bets · {{ value_bets|length }} Value Plays</span>
+        <a class="section-link" href="/betting">All Breakdowns <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></a>
       </div>
     </div>
-    <p>
-      Stakes are generated from edge and confidence, then capped across the card so the app can attack value without overloading the bankroll.
+
+    <div class="signal-board-header">
+      <div>#</div><div>Fight</div><div>Model Lean</div><div>Finish/Dec</div><div>Edge</div><div>Rating</div><div></div>
+    </div>
+    <div class="signal-board">
+      {% for fight in betting %}
+      <a class="signal-row {% if fight.playable_label == 'Best Bet' %}signal-row--hot{% elif fight.playable_label == 'Value' %}signal-row--value{% endif %}"
+         href="/betting/{{ fight.fight_id }}">
+        <div class="sbout">
+          {{ fight.bout_number or loop.index }}
+          <small>{{ fight.weight_class[:3]|upper if fight.weight_class else '—' }}</small>
+        </div>
+        <div class="sfight">
+          <strong>{{ fight.fight }}</strong>
+          <span>
+            {% if fight.verdict %}{{ fight.verdict.timing }}{% if fight.verdict.method %} · {{ fight.verdict.method }}{% endif %}{% endif %}
+          </span>
+        </div>
+        <div class="slean">
+          <strong>{{ fight.model_side }}</strong>
+          <span>{{ "%.0f"|format(fight.model_side_probability * 100) }}% probability</span>
+        </div>
+        <div class="sprobs">
+          <span class="fn">Fin {{ "%.0f"|format(fight.finish_probability * 100) }}%</span>
+          <span>Dec {{ "%.0f"|format(fight.decision_probability * 100) }}%</span>
+        </div>
+        <div class="sedge {% if fight.best_priced_edge is number %}{% if fight.best_priced_edge >= 10 %}sedge--prime{% elif fight.best_priced_edge >= 6 %}sedge--strong{% elif fight.best_priced_edge > 0 %}sedge--min{% else %}sedge--none{% endif %}{% else %}sedge--none{% endif %}">
+          {% if fight.best_priced_edge is number and fight.best_priced_edge > 0 %}+{{ fight.best_priced_edge }}%{% else %}—{% endif %}
+        </div>
+        <div class="slabel-wrap">
+          <span class="slabel slabel--{{ fight.playable_label|lower|replace(' ','-') }}">{{ fight.playable_label }}</span>
+        </div>
+        <div class="sarrow">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+        </div>
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endif %}
+
+{# ── ACTIVE STAKES ──────────────────────────────────────────────────────────── #}
+{% if singles or accas or pending_bets %}
+<section class="section--glow">
+  <div class="section-inner">
+    <div class="section-head">
+      <div class="left">
+        <span class="eyebrow">💰 Active Positions · {{ singles|length }} singles{% if accas %} · {{ accas|length }} accas{% endif %}</span>
+        <h2>Staked <em>capital</em></h2>
+      </div>
+      <div style="display:flex;gap:20px;align-items:center;flex-wrap:wrap">
+        <div style="text-align:right">
+          <div style="font-family:var(--display);font-weight:600;font-size:28px;color:var(--text)">EUR {{ "%.2f"|format(total_exposure) }}</div>
+          <div style="font-family:var(--mono);font-size:10px;letter-spacing:.18em;color:var(--text-dim);text-transform:uppercase">Total Exposure</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-family:var(--display);font-weight:600;font-size:28px;color:var(--teal)">EUR {{ "%.2f"|format(returns_total.v) }}</div>
+          <div style="font-family:var(--mono);font-size:10px;letter-spacing:.18em;color:var(--text-dim);text-transform:uppercase">Potential Return</div>
+        </div>
+        <a class="section-link" href="/bankroll">Full Bankroll <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></a>
+      </div>
+    </div>
+
+    {% if singles %}
+    <div class="stakes-grid">
+      {% for pick in singles %}
+      <a class="stake-card {% if pick.label == 'Best Bet' or pick.label == 'BEST BET' %}stake-card--hot{% elif pick.label == 'Value' or pick.label == 'VALUE' %}stake-card--value{% endif %}"
+         href="/betting/{{ pick.fight_id }}">
+        <div class="stake-top">
+          <div class="stake-selection">{{ pick.selection }}</div>
+          <div class="stake-odds">{{ "%.2f"|format(pick.decimal_odds) }}</div>
+        </div>
+        <div class="stake-fight">{{ pick.fight }}<br/>{{ pick.market }} · {{ pick.sportsbook }}</div>
+        <div class="stake-metrics">
+          <div class="stake-metric">
+            <span>Stake</span>
+            <strong>EUR {{ "%.2f"|format(pick.stake.eur) }}</strong>
+          </div>
+          <div class="stake-metric">
+            <span>Return</span>
+            <strong class="pos">EUR {{ "%.2f"|format(pick.potential_return) }}</strong>
+          </div>
+          <div class="stake-metric">
+            <span>Edge</span>
+            <strong class="pos">{{ pick.edge }}%</strong>
+          </div>
+        </div>
+        <div class="stake-footer">
+          <span class="stake-book">{{ pick.sportsbook }}</span>
+          <span class="stake-conf {{ pick.confidence|lower }}">{{ pick.confidence }} Confidence</span>
+        </div>
+      </a>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if top_acca %}
+    <div class="acca-card">
+      <div class="acca-head">
+        <div>
+          <div class="acca-type">{{ top_acca.type }} Accumulator · {{ top_acca.legs|length }} legs</div>
+          <div class="acca-title">Multi-leg build</div>
+        </div>
+        <div style="text-align:right">
+          <div class="acca-odds-big">{{ "%.2f"|format(top_acca.combined_odds) }}x</div>
+          <div class="acca-odds-lbl">Combined odds</div>
+        </div>
+      </div>
+      <div class="acca-legs">
+        {% for leg in top_acca.legs %}
+        <div class="acca-leg">
+          <div class="acca-leg-num">{{ loop.index }}</div>
+          <div class="acca-leg-info">
+            <strong>{{ leg.selection }}</strong>
+            <span>{{ leg.fight }} · {{ leg.market }}</span>
+          </div>
+          <div class="acca-leg-odds">{{ "%.2f"|format(leg.odds) }}</div>
+        </div>
+        {% endfor %}
+      </div>
+      <div class="acca-stats">
+        <div class="acca-stat"><span>Stake</span><strong>EUR {{ "%.2f"|format(top_acca.stake) }}</strong></div>
+        <div class="acca-stat"><span>Return</span><strong class="pos">EUR {{ "%.2f"|format(top_acca.potential_return) }}</strong></div>
+        <div class="acca-stat"><span>Combo Edge</span><strong class="pos">{{ top_acca.combined_edge }}%</strong></div>
+      </div>
+    </div>
+    {% if accas|length > 1 %}
+    <p style="font-family:var(--mono);font-size:10px;letter-spacing:.18em;color:var(--text-dim);text-transform:uppercase;margin-top:12px;text-align:center">
+      + {{ accas|length - 1 }} more accumulator builds — <a href="/bankroll" style="color:var(--teal)">view all on bankroll page</a>
     </p>
-  </div>
+    {% endif %}
+    {% endif %}
 
-  <div class="featured-ticket glow-border">
-    <div class="panel-header">
-      <span>Featured Angle</span>
-      <strong>{% if top_pick %}Single{% elif top_acca %}Accumulator{% else %}Awaiting Price{% endif %}</strong>
+    {% if pending_bets %}
+    <div style="margin-top:20px">
+      <div style="font-family:var(--mono);font-size:10px;letter-spacing:.2em;color:var(--text-dim);text-transform:uppercase;margin-bottom:8px">{{ pending_bets|length }} Pending in ledger</div>
+      <div class="pending-strip">
+        {% for bet in pending_bets %}
+        <span class="pending-pill">{{ bet.selection }} · {{ bet.fight }} · EUR {{ bet.stake_eur }}</span>
+        {% endfor %}
+      </div>
     </div>
-    {% if top_pick %}
-    <h3>{{ top_pick.selection }}</h3>
-    <p>{{ top_pick.fight }} - {{ top_pick.market }}</p>
-    <div class="ticket-row">
-      <span>Odds</span>
-      <strong>{{ "%.2f"|format(top_pick.decimal_odds) }}</strong>
+    {% endif %}
+
+    {% if not singles and not accas and not pending_bets %}
+    <div class="ds-empty">
+      <h3>No active positions</h3>
+      <p>Generate the staking plan to populate this section.</p>
     </div>
-    <div class="ticket-row">
-      <span>Stake</span>
-      <strong>EUR {{ "%.2f"|format(top_pick.stake.eur) }}</strong>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+
+{# ── FIGHT CARD ─────────────────────────────────────────────────────────────── #}
+<section class="section--alt">
+  <div class="section-inner">
+    <div class="section-head">
+      <div class="left">
+        <span class="eyebrow">⚡ Tonight's Card · {{ event_title }}</span>
+        <h2>{{ total_bouts }} <em>bouts</em></h2>
+      </div>
+      <a class="section-link" href="/betting">Full Analysis <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></a>
     </div>
-    <div class="ticket-row">
-      <span>Edge</span>
-      <strong>{{ top_pick.edge }}%</strong>
+
+    {% if main_card %}
+    <div class="events">
+      {% for m in main_card[:3] %}
+      {% set fa = m.fighter_a %}
+      {% set fb = m.fighter_b %}
+      {% set fid = [fa.fighter_id, fb.fighter_id] | sort | join('_') %}
+      {% set bf = betting | selectattr('fight_id','equalto',fid) | list | first %}
+      <a class="event-card {% if loop.first %}large{% endif %}" href="/betting/{{ fid }}" style="display:flex">
+        <div class="ph"></div>
+        <div class="overlay"></div>
+        <div class="corner-num">
+          Bout {{ total_bouts - loop.index0 }}{% if loop.first %} · Main Event{% elif loop.index == 2 %} · Co-Main{% endif %}
+        </div>
+        <div class="content">
+          <div class="date-stamp">
+            <span style="font-family:var(--mono);font-size:10px;letter-spacing:.2em;color:var(--teal);text-transform:uppercase">{{ m.weight_class }}</span>
+          </div>
+          <h4>{{ fa.get('name','TBA').split()[-1] }}<br/>vs {{ fb.get('name','TBA').split()[-1] }}</h4>
+          <div class="venue">{{ fa.get('name','TBA') }} vs {{ fb.get('name','TBA') }}</div>
+          {% if bf %}
+          <div class="venue" style="margin-top:4px;color:var(--teal)">
+            ↗ {{ bf.model_side }} · {{ "%.0f"|format(bf.model_side_probability*100) }}%
+            {% if bf.verdict %}· {{ bf.verdict.method }}{% endif %}
+          </div>
+          {% endif %}
+          <div class="tags">
+            {% if loop.first %}<span class="tag featured">Main Event</span>
+            {% elif loop.index == 2 %}<span class="tag featured">Co-Main</span>{% endif %}
+            {% if bf and bf.playable_label == 'Best Bet' %}<span class="tag featured">🔥 Best Bet</span>
+            {% elif bf and bf.playable_label == 'Value' %}<span class="tag ppv">Value</span>{% endif %}
+            {% if bf and bf.best_priced_edge is number and bf.best_priced_edge > 0 %}
+            <span class="tag">+{{ bf.best_priced_edge }}% edge</span>{% endif %}
+            {% if fa.get('odds') %}<span class="tag">{{ fa.get('name','').split()[-1] }} {{ fa.odds }}</span>{% endif %}
+          </div>
+        </div>
+      </a>
+      {% endfor %}
     </div>
-    {% elif top_acca %}
-    <h3>{{ top_acca.type }}</h3>
-    <p>{{ top_acca.legs|length }}-leg build at {{ "%.2f"|format(top_acca.combined_odds) }}x</p>
-    <div class="ticket-row">
-      <span>Stake</span>
-      <strong>EUR {{ "%.2f"|format(top_acca.stake) }}</strong>
+
+    {% set remaining = main_card[3:] + prelim_card + early_card %}
+    {% if remaining %}
+    <div class="bout-cards">
+      {% for m in remaining %}
+      {% set fa = m.fighter_a %}
+      {% set fb = m.fighter_b %}
+      {% set fid = [fa.fighter_id, fb.fighter_id] | sort | join('_') %}
+      {% set bf = betting | selectattr('fight_id','equalto',fid) | list | first %}
+      <a class="bout-card {% if bf and bf.playable_label == 'Best Bet' %}bout-card--hot{% elif bf and bf.playable_label == 'Value' %}bout-card--value{% endif %}"
+         href="/betting/{{ fid }}">
+        <div class="bout-num">{{ total_bouts - (main_card[:3]|length) - loop.index0 }}</div>
+        <div class="bout-fighters">
+          <div class="bout-names">
+            {{ fa.get('name','TBA') }}<span class="bout-vs">vs</span>{{ fb.get('name','TBA') }}
+          </div>
+          <div class="bout-meta">
+            {{ m.weight_class }}
+            {% if bf %} · {{ bf.model_side }} {{ "%.0f"|format(bf.model_side_probability*100) }}%{% if bf.verdict %} · {{ bf.verdict.method }}{% endif %}{% endif %}
+          </div>
+        </div>
+        <div class="bout-signals">
+          {% if bf and bf.playable_label != 'Skip' %}
+          <span class="slabel slabel--{{ bf.playable_label|lower|replace(' ','-') }}">{{ bf.playable_label }}</span>
+          {% endif %}
+          {% if bf and bf.best_priced_edge is number and bf.best_priced_edge > 0 %}
+          <span class="bout-edge">+{{ bf.best_priced_edge }}%</span>
+          {% endif %}
+        </div>
+        <div class="bout-arrow">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+        </div>
+      </a>
+      {% endfor %}
     </div>
-    <div class="ticket-row">
-      <span>Return</span>
-      <strong>EUR {{ "%.2f"|format(top_acca.potential_return) }}</strong>
-    </div>
+    {% endif %}
     {% else %}
-    <h3>No Bet Forced</h3>
-    <p>Refresh odds on fight day to unlock priced recommendations.</p>
+    <div class="ds-empty"><h3>No card loaded</h3><p>Run the scraper to pull tonight's matchups.</p></div>
     {% endif %}
   </div>
 </section>
 
-<section class="landing-section bet-ledger-section">
-  <div class="section-heading-row">
-    <div>
-      <h2 class="section-heading">Placed Bets</h2>
-      <p class="section-blurb">Compact slip view with stake, price, and potential return for every active position.</p>
+{# ── STATS BAND ─────────────────────────────────────────────────────────────── #}
+<div class="stats-band">
+  <div class="stats-grid">
+    <div class="stat-block">
+      <div class="v">{{ "%.0f"|format(bankroll) }}<span class="unit">EUR</span></div>
+      <div class="l">Active Bankroll</div>
+      <div class="d {% if pnl >= 0 %}t-up{% else %}t-dn{% endif %}">{{ "%+.2f"|format(pnl) }} P&L from base</div>
     </div>
-    <a href="/bankroll" class="btn btn--outline">Bet History</a>
-  </div>
-
-  <div class="bet-ledger">
-    {% for pick in singles %}
-    <a href="/betting/{{ pick.fight_id }}" class="bet-ledger-row">
-      <span class="bet-ledger-type {% if pick.label == 'BEST BET' %}edge-badge edge-badge--high{% elif pick.label == 'VALUE' %}edge-badge edge-badge--value{% else %}edge-badge edge-badge--lean{% endif %}">{{ pick.label }}</span>
-      <div>
-        <strong>{{ pick.selection }}</strong>
-        <small>{{ pick.fight }} · {{ pick.market }} · {{ pick.sportsbook }}</small>
-      </div>
-      <em>{{ "%.2f"|format(pick.decimal_odds) }}</em>
-      <em>EUR {{ "%.2f"|format(pick.stake.eur) }}</em>
-      <em class="profit">EUR {{ "%.2f"|format(pick.potential_return) }}</em>
-    </a>
-    {% endfor %}
-    {% for acca in accas %}
-    <a href="/bankroll" class="bet-ledger-row bet-ledger-row--acca">
-      <span class="bet-ledger-type">{{ acca.type }}</span>
-      <div>
-        <strong>{{ acca.type }} Accumulator</strong>
-        <small>{{ acca.legs|length }} legs · combined {{ "%.2f"|format(acca.combined_odds) }}x</small>
-      </div>
-      <em>{{ "%.2f"|format(acca.combined_odds) }}</em>
-      <em>EUR {{ "%.2f"|format(acca.stake) }}</em>
-      <em class="profit">EUR {{ "%.2f"|format(acca.potential_return) }}</em>
-    </a>
-    {% endfor %}
-    {% if not singles and not accas %}
-    <div class="bet-ledger-row">
-      <span class="bet-ledger-type">Idle</span>
-      <div>
-        <strong>No bets placed</strong>
-        <small>Generate the model and staking plan to populate this ledger.</small>
-      </div>
-      <em>--</em>
-      <em>EUR 0.00</em>
-      <em>EUR 0.00</em>
+    <div class="stat-block">
+      <div class="v">{{ singles|length }}<span class="unit">picks</span></div>
+      <div class="l">Singles Armed</div>
+      <div class="d">{{ best_bets|length }} Best Bets · {{ value_bets|length }} Value</div>
     </div>
-    {% endif %}
-  </div>
-</section>
-
-<section class="landing-section activity-layout activity-layout--card-command">
-  <div>
-    <h2 class="section-heading">Card Command</h2>
-    <p class="section-blurb">The card is split into UFC-style blocks below, with each bout linking into the betting board.</p>
-  </div>
-
-  <div class="card-command-panel">
-    <div class="panel-header">
-      <span>Card Command</span>
-      <strong>{{ matchups|length }} Bouts</strong>
+    <div class="stat-block">
+      <div class="v">{{ total_bouts }}<span class="unit">bouts</span></div>
+      <div class="l">Card Coverage</div>
+      <div class="d">{{ main_count }} main · {{ prelim_count }} prelims</div>
     </div>
-    <h3>{{ card.get('event_name', 'Upcoming UFC Card') }}</h3>
-    <p>
-      Full fight-card access is staged below with every matchup linked directly into the betting model, odds board, and fight-script analysis.
-    </p>
-    <a href="/betting" class="btn btn--ice">Open Full Board</a>
-  </div>
-</section>
-
-<section class="landing-section fight-card-access">
-  <div class="section-heading-row">
-    <div>
-      <h2 class="section-heading">Fight Card Access</h2>
-      <p class="section-blurb">Every bout on the card, kept compact so the landing page still moves fast.</p>
+    <div class="stat-block">
+      <div class="v">{{ "%.0f"|format(total_exposure) }}<span class="unit">EUR</span></div>
+      <div class="l">Total Exposure</div>
+      <div class="d">{{ "%.0f"|format(returns_total.v) }} EUR potential return</div>
     </div>
-    <a href="/betting" class="btn btn--outline">Betting Board</a>
   </div>
-  <div class="compact-card-list compact-card-list--full">
-    <div class="fight-card-group fight-card-group--main">
-      <div class="fight-card-group__header">
-        <span>Main Card</span>
-        <strong>{{ main_card|length }} fights</strong>
-      </div>
-      {% for m in main_card %}
-      {% set fa = m.fighter_a %}
-      {% set fb = m.fighter_b %}
-      <a href="/betting/{{ [fa.fighter_id, fb.fighter_id] | sort | join('_') }}" class="compact-fight-row">
-        <span>{% if loop.first %}Bout {{ total_bouts - loop.index0 }} / Main Event{% elif loop.index == 2 %}Bout {{ total_bouts - loop.index0 }} / Co-Main Event{% else %}Bout {{ total_bouts - loop.index0 }}{% endif %}</span>
-        <strong>{{ fa.name }} vs {{ fb.name }}</strong>
-        <small>{{ m.weight_class }}</small>
+</div>
+
+{# ── CTA ────────────────────────────────────────────────────────────────────── #}
+<section class="cta-band">
+  <div class="cta-grid"></div>
+  <div class="cta-inner">
+    <span class="eyebrow">For the serious bettor</span>
+    <h2>Edge isn't luck.<br/><em>It's a model.</em></h2>
+    <p>Open the betting board to see live edges, odds movement, fully scored fights and a staking plan across every market on every book.</p>
+    <div class="hero-cta-row" style="margin-top:14px">
+      <a class="btn primary" href="/betting">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>
+        Open Betting Board
       </a>
-      {% endfor %}
+      <a class="btn" href="/bankroll">Bankroll →</a>
+      <a class="btn ghost" href="/check-movement">Movement →</a>
     </div>
-
-    {% if prelim_card %}
-    <div class="fight-card-group">
-      <div class="fight-card-group__header">
-        <span>Prelims</span>
-        <strong>{{ prelim_card|length }} fights</strong>
-      </div>
-      {% for m in prelim_card %}
-      {% set fa = m.fighter_a %}
-      {% set fb = m.fighter_b %}
-      <a href="/betting/{{ [fa.fighter_id, fb.fighter_id] | sort | join('_') }}" class="compact-fight-row">
-        <span>Bout {{ total_bouts - main_count - loop.index0 }}</span>
-        <strong>{{ fa.name }} vs {{ fb.name }}</strong>
-        <small>{{ m.weight_class }}</small>
-      </a>
-      {% endfor %}
-    </div>
-    {% endif %}
-
-    {% if early_prelim_card %}
-    <div class="fight-card-group fight-card-group--early">
-      <div class="fight-card-group__header">
-        <span>Early Prelims</span>
-        <strong>{{ early_prelim_card|length }} fights</strong>
-      </div>
-      {% for m in early_prelim_card %}
-      {% set fa = m.fighter_a %}
-      {% set fb = m.fighter_b %}
-      <a href="/betting/{{ [fa.fighter_id, fb.fighter_id] | sort | join('_') }}" class="compact-fight-row">
-        <span>Bout {{ total_bouts - main_count - prelim_count - loop.index0 }}</span>
-        <strong>{{ fa.name }} vs {{ fb.name }}</strong>
-        <small>{{ m.weight_class }}</small>
-      </a>
-      {% endfor %}
-    </div>
-    {% endif %}
   </div>
-</section>
-
-<section class="landing-section">
-  <h2 class="section-heading">Combat Finance Toolkit</h2>
-  <div class="feature-grid-premium">
-    <a href="/betting" class="feature-tile">
-      <span class="feature-icon">01</span>
-      <h3>Edge Detection</h3>
-      <p>Compare sportsbook prices against model probability, implied odds, and fight-script logic.</p>
-    </a>
-    <a href="/bankroll" class="feature-tile">
-      <span class="feature-icon">02</span>
-      <h3>Bankroll Control</h3>
-      <p>EUR 500 base bankroll, 3-10% stake tiers, confidence caps, and card exposure protection.</p>
-    </a>
-    <a href="/check-movement" class="feature-tile">
-      <span class="feature-icon">03</span>
-      <h3>Movement Scan</h3>
-      <p>Freeze earlier prices, refresh Saturday odds, and spot steam, drift, or newly playable value.</p>
-    </a>
-    <a href="/fighters" class="feature-tile">
-      <span class="feature-icon">04</span>
-      <h3>Fight Intelligence</h3>
-      <p>Blend UFC stats, styles, finish profiles, recent form, and physical advantages into betting context.</p>
-    </a>
-  </div>
-</section>
-
-<section class="closing-stripe">
-  <div>
-    <span>Octagon IQ</span>
-    <strong>Built for sharp UFC decision-making before the cage door shuts.</strong>
-  </div>
-  <a href="/betting" class="btn btn--neon">Enter the Board</a>
 </section>
 
 {% endblock %}
 
 {% block scripts %}
 <script>
+/* ===== Hero image regen + status polling ===== */
 (function(){
-  var months = {January:0,February:1,March:2,April:3,May:4,June:5,July:6,August:7,September:8,October:9,November:10,December:11};
-  var banner = document.getElementById('fightHeader');
-  if (!banner) return;
-  var eventDate = banner.dataset.eventDate;
-  var m = eventDate.match(/(\w+)\s+(\d+),\s+(\d+)/);
-  if (!m) return;
-  // UFC Fight Night cards kick off ~7 PM ET = 23:00 UTC in April
-  var eventStart = new Date(Date.UTC(+m[3], months[m[1]], +m[2], 23, 0, 0));
+  var btn  = document.getElementById('heroRegen');
+  var pill = document.getElementById('heroGenerating');
 
-  var elD     = document.getElementById('fnDays');
-  var elH     = document.getElementById('fnHours');
-  var elM     = document.getElementById('fnMins');
-  var elTimer = document.getElementById('fightCountdown');
-  var elLive  = document.getElementById('fnLive');
-
-  function pad(n){ return (n < 10 ? '0' : '') + n; }
-
-  function tick(){
-    var now     = Date.now();
-    var diff    = eventStart - now;
-    var elapsed = now - eventStart;
-    if (diff > 0) {
-      var d  = Math.floor(diff / 86400000);
-      var h  = Math.floor((diff % 86400000) / 3600000);
-      var mn = Math.floor((diff % 3600000)  / 60000);
-      elD.textContent = pad(d);
-      elH.textContent = pad(h);
-      elM.textContent = pad(mn);
-      elTimer.hidden = false;
-      elLive.hidden = true;
-      banner.classList.remove('fight-header--live');
-      if (d === 0 && h < 6) {
-        banner.classList.add('fight-header--soon');
-      } else {
-        banner.classList.remove('fight-header--soon');
-      }
-    } else if (elapsed < 21600000) {
-      elTimer.hidden = true;
-      elLive.hidden = false;
-      banner.classList.remove('fight-header--soon');
-      banner.classList.add('fight-header--live');
-    } else {
-      banner.classList.remove('fight-header--soon');
-      banner.classList.remove('fight-header--live');
-      elTimer.hidden = false;
-      elLive.hidden = true;
-      elD.textContent = '00';
-      elH.textContent = '00';
-      elM.textContent = '00';
-    }
+  /* Regen button */
+  if(btn){
+    btn.addEventListener('click', function(){
+      btn.classList.add('spinning');
+      btn.disabled = true;
+      fetch('/api/hero-image/regenerate', {method:'POST'})
+        .then(function(r){ return r.json(); })
+        .then(function(d){
+          btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:11px;height:11px;animation:spin .8s linear infinite"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg> Generating…';
+          startPolling();
+        })
+        .catch(function(){ btn.classList.remove('spinning'); btn.disabled = false; });
+    });
   }
-  tick();
-  setInterval(tick, 1000);
+
+  /* Auto-poll when no image present yet */
+  if(pill){ startPolling(); }
+
+  function startPolling(){
+    var interval = setInterval(function(){
+      fetch('/api/hero-image', {cache:'no-store'})
+        .then(function(r){ return r.json(); })
+        .then(function(d){
+          if(d.status === 'ready' && d.url){
+            clearInterval(interval);
+            location.reload();
+          } else if(d.status === 'error'){
+            clearInterval(interval);
+            if(pill) pill.innerHTML = '<span style="color:var(--red)">Generation failed — check logs</span>';
+            if(btn){ btn.classList.remove('spinning'); btn.disabled = false; btn.textContent = '↺ Retry'; }
+          }
+        })
+        .catch(function(){/* network blip, keep polling */});
+    }, 7000);
+  }
+})();
+
+/* ===== Countdown wired to event date ===== */
+(function(){
+  var months={January:0,February:1,March:2,April:3,May:4,June:5,July:6,August:7,September:8,October:9,November:10,December:11};
+  var hero=document.querySelector('.hero[data-event-date]');
+  var target;
+  if(hero&&hero.dataset.eventDate){
+    var m=hero.dataset.eventDate.match(/(\w+)\s+(\d+),\s+(\d+)/);
+    if(m&&months[m[1]]!==undefined) target=new Date(Date.UTC(+m[3],months[m[1]],+m[2],23,0,0));
+  }
+  if(!target||isNaN(target)) target=new Date(Date.now()+7*86400000);
+  var d=document.getElementById('cd-days'),h=document.getElementById('cd-hours'),
+      mi=document.getElementById('cd-mins'),s=document.getElementById('cd-secs');
+  function pad(n){return String(Math.max(0,n)).padStart(2,'0')}
+  function tick(){
+    var ms=target-Date.now();
+    if(ms<=0){d.textContent=h.textContent=mi.textContent=s.textContent='00';return}
+    d.textContent=pad(Math.floor(ms/86400000));
+    h.textContent=pad(Math.floor(ms/3600000)%24);
+    mi.textContent=pad(Math.floor(ms/60000)%60);
+    s.textContent=pad(Math.floor(ms/1000)%60);
+  }
+  tick();setInterval(tick,1000);
+})();
+
+/* ===== Silhouette parallax ===== */
+(function(){
+  var figs=document.querySelectorAll('.hero-fig .silhouette');
+  var heroEl=document.querySelector('.hero');
+  if(!figs.length||!heroEl)return;
+  var raf=0,tx=0,ty=0;
+  heroEl.addEventListener('mousemove',function(e){
+    var r=heroEl.getBoundingClientRect();
+    tx=((e.clientX-r.left)/r.width-.5)*2;
+    ty=((e.clientY-r.top)/r.height-.5)*2;
+    if(!raf)raf=requestAnimationFrame(apply);
+  });
+  function apply(){
+    if(figs[0])figs[0].style.transform='translate('+(-tx*14)+'px,'+(-ty*8)+'px) scale(1.02)';
+    if(figs[1])figs[1].style.transform='translate('+(tx*14)+'px,'+(-ty*8)+'px) scale(1.02)';
+    raf=0;
+  }
+})();
+
+/* ===== Scroll reveal ===== */
+(function(){
+  var els=document.querySelectorAll('section,.event-card,.signal-row,.stake-card,.rk-row,.stat-block');
+  els.forEach(function(el){
+    el.style.opacity='0';el.style.transform='translateY(20px)';
+    el.style.transition='opacity .7s cubic-bezier(.2,.8,.2,1),transform .7s cubic-bezier(.2,.8,.2,1)';
+  });
+  var io=new IntersectionObserver(function(entries){
+    entries.forEach(function(e,i){
+      if(e.isIntersecting){
+        setTimeout(function(){e.target.style.opacity='1';e.target.style.transform='translateY(0)';},i%8*35);
+        io.unobserve(e.target);
+      }
+    });
+  },{threshold:.06});
+  els.forEach(function(el){io.observe(el);});
 })();
 </script>
 {% endblock %}

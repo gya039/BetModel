@@ -1,0 +1,407 @@
+{% extends "base.html" %}
+{% block title %}Fight Preview — {{ card.get('event_name') or 'UFC Fight Night' }}{% endblock %}
+
+{% block content %}
+
+{# ══ DATA EXTRACTION ══════════════════════════════════════════════════════════ #}
+{% set event_title    = (card.get('event_name') or 'UFC Fight Night').replace('vs.','vs') %}
+{% set event_date     = card.get('event_date', '') %}
+{% set event_location = card.get('event_location', '') %}
+{% set main_event     = matchups[0] if matchups else none %}
+{% set fa             = main_event.fighter_a if main_event else none %}
+{% set fb             = main_event.fighter_b if main_event else none %}
+{% set fa_id          = fa.get('fighter_id','') if fa else '' %}
+{% set fb_id          = fb.get('fighter_id','') if fb else '' %}
+{% set fa_lk          = (fighters | selectattr('fighter_id','equalto',fa_id) | list | first) if fa else none %}
+{% set fb_lk          = (fighters | selectattr('fighter_id','equalto',fb_id) | list | first) if fb else none %}
+
+{# names & photos #}
+{% set fa_full  = fa.get('name','Fighter A') if fa else 'Fighter A' %}
+{% set fb_full  = fb.get('name','Fighter B') if fb else 'Fighter B' %}
+{% set fa_last  = fa_full.split()[-1] | upper %}
+{% set fb_last  = fb_full.split()[-1] | upper %}
+{% set fa_photo = fa.get('photo') or (fa_lk.get('photo') if fa_lk else none) %}
+{% set fb_photo = fb.get('photo') or (fb_lk.get('photo') if fb_lk else none) %}
+
+{# record #}
+{% set fa_wins   = fa.get('wins',0)   | int %}
+{% set fa_losses = fa.get('losses',0) | int %}
+{% set fa_draws  = fa.get('draws',0)  | int %}
+{% set fb_wins   = fb.get('wins',0)   | int %}
+{% set fb_losses = fb.get('losses',0) | int %}
+{% set fb_draws  = fb.get('draws',0)  | int %}
+{% set fa_record = (fa_wins~'-'~fa_losses~('-'~fa_draws if fa_draws > 0 else '')) if fa else '—' %}
+{% set fb_record = (fb_wins~'-'~fb_losses~('-'~fb_draws if fb_draws > 0 else '')) if fb else '—' %}
+
+{# basic stats #}
+{% set fa_age    = fa.get('age')        or (fa_lk.get('age')        if fa_lk else none) %}
+{% set fb_age    = fb.get('age')        or (fb_lk.get('age')        if fb_lk else none) %}
+{% set fa_height = fa.get('height_raw') or (fa_lk.get('height_raw') if fa_lk else none) %}
+{% set fb_height = fb.get('height_raw') or (fb_lk.get('height_raw') if fb_lk else none) %}
+{% set fa_weight = fa.get('weight_lbs') or (fa_lk.get('weight_lbs') if fa_lk else none) %}
+{% set fb_weight = fb.get('weight_lbs') or (fb_lk.get('weight_lbs') if fb_lk else none) %}
+{% set fa_reach  = fa.get('reach_raw')  or (fa_lk.get('reach_raw')  if fa_lk else none) %}
+{% set fb_reach  = fb.get('reach_raw')  or (fb_lk.get('reach_raw')  if fb_lk else none) %}
+{% set fa_stance = fa.get('stance')     or (fa_lk.get('stance')     if fa_lk else none) %}
+{% set fb_stance = fb.get('stance')     or (fb_lk.get('stance')     if fb_lk else none) %}
+
+{# fight context #}
+{% set division = fa.get('weight_class') or (fa_lk.get('weight_class') if fa_lk else none)
+                  or fb.get('weight_class') or (fb_lk.get('weight_class') if fb_lk else none) %}
+{% set fa_rank  = fa.get('ranking') or (fa_lk.get('ranking') if fa_lk else none) %}
+{% set fb_rank  = fb.get('ranking') or (fb_lk.get('ranking') if fb_lk else none) %}
+
+{# advanced stats for comparison bars (raw floats, 0 if missing) #}
+{% set fa_slpm_r   = fa.get('slpm')    or (fa_lk.get('slpm')    if fa_lk else none) %}
+{% set fb_slpm_r   = fb.get('slpm')    or (fb_lk.get('slpm')    if fb_lk else none) %}
+{% set fa_td_avg_r = fa.get('td_avg')  or (fa_lk.get('td_avg')  if fa_lk else none) %}
+{% set fb_td_avg_r = fb.get('td_avg')  or (fb_lk.get('td_avg')  if fb_lk else none) %}
+{% set fa_strdef_r = fa.get('str_def') or (fa_lk.get('str_def') if fa_lk else none) %}
+{% set fb_strdef_r = fb.get('str_def') or (fb_lk.get('str_def') if fb_lk else none) %}
+{% set fa_slpm     = fa_slpm_r   | float if fa_slpm_r   else 0 %}
+{% set fb_slpm     = fb_slpm_r   | float if fb_slpm_r   else 0 %}
+{% set fa_td_avg   = fa_td_avg_r | float if fa_td_avg_r else 0 %}
+{% set fb_td_avg   = fb_td_avg_r | float if fb_td_avg_r else 0 %}
+{% set fa_strdef   = fa_strdef_r | float if fa_strdef_r else 0 %}
+{% set fb_strdef   = fb_strdef_r | float if fb_strdef_r else 0 %}
+
+{# bar percentages #}
+{% set fa_str_pct = ((fa_slpm   / (fa_slpm   + fb_slpm))   * 100) | round | int if (fa_slpm   + fb_slpm)   > 0 else 50 %}
+{% set fa_grp_pct = ((fa_td_avg / (fa_td_avg + fb_td_avg)) * 100) | round | int if (fa_td_avg + fb_td_avg) > 0 else 50 %}
+{% set fa_def_pct = ((fa_strdef / (fa_strdef + fb_strdef)) * 100) | round | int if (fa_strdef + fb_strdef) > 0 else 50 %}
+{% set fb_str_pct = 100 - fa_str_pct %}
+{% set fb_grp_pct = 100 - fa_grp_pct %}
+{% set fb_def_pct = 100 - fa_def_pct %}
+
+{# win methods #}
+{% set fa_ko_w = fa.get('wins_by_ko_tko') or fa.get('wins_by_ko') or (fa_lk.get('wins_by_ko_tko') if fa_lk else none) %}
+{% set fa_su_w = fa.get('wins_by_sub')              or (fa_lk.get('wins_by_sub')    if fa_lk else none) %}
+{% set fa_de_w = fa.get('wins_by_dec')              or (fa_lk.get('wins_by_dec')    if fa_lk else none) %}
+{% set fb_ko_w = fb.get('wins_by_ko_tko') or fb.get('wins_by_ko') or (fb_lk.get('wins_by_ko_tko') if fb_lk else none) %}
+{% set fb_su_w = fb.get('wins_by_sub')              or (fb_lk.get('wins_by_sub')    if fb_lk else none) %}
+{% set fb_de_w = fb.get('wins_by_dec')              or (fb_lk.get('wins_by_dec')    if fb_lk else none) %}
+{% set show_methods = fa_ko_w or fa_su_w or fa_de_w or fb_ko_w or fb_su_w or fb_de_w %}
+
+{# fighter identity tag — always show when wins > 0 #}
+{% if fa_wins > 0 %}
+  {% set _fa_ko = (fa_ko_w | int) if fa_ko_w else 0 %}
+  {% set _fa_su = (fa_su_w | int) if fa_su_w else 0 %}
+  {% set _fa_fin_pct = ((_fa_ko + _fa_su) / fa_wins * 100) | round | int %}
+  {% set _fa_ko_pct  = (_fa_ko / fa_wins * 100) | round | int %}
+  {% set _fa_su_pct  = (_fa_su / fa_wins * 100) | round | int %}
+  {% if _fa_ko_pct  >= 45 %}{% set fa_tag = "KO POWER" %}
+  {% elif _fa_su_pct >= 25 %}{% set fa_tag = "SUBMISSION THREAT" %}
+  {% elif _fa_fin_pct >= 55 %}{% set fa_tag = "FINISHER" %}
+  {% elif fa_slpm > 4.5 and fa_td_avg < 1.5 %}{% set fa_tag = "STRIKER" %}
+  {% elif fa_td_avg >= 2.0 %}{% set fa_tag = "GRAPPLER" %}
+  {% elif fa_slpm > 3.5 %}{% set fa_tag = "STRIKER" %}
+  {% else %}{% set fa_tag = "DECISION SPECIALIST" %}{% endif %}
+{% else %}{% set fa_tag = none %}{% endif %}
+
+{% if fb_wins > 0 %}
+  {% set _fb_ko = (fb_ko_w | int) if fb_ko_w else 0 %}
+  {% set _fb_su = (fb_su_w | int) if fb_su_w else 0 %}
+  {% set _fb_fin_pct = ((_fb_ko + _fb_su) / fb_wins * 100) | round | int %}
+  {% set _fb_ko_pct  = (_fb_ko / fb_wins * 100) | round | int %}
+  {% set _fb_su_pct  = (_fb_su / fb_wins * 100) | round | int %}
+  {% if _fb_ko_pct  >= 45 %}{% set fb_tag = "KO POWER" %}
+  {% elif _fb_su_pct >= 25 %}{% set fb_tag = "SUBMISSION THREAT" %}
+  {% elif _fb_fin_pct >= 55 %}{% set fb_tag = "FINISHER" %}
+  {% elif fb_slpm > 4.5 and fb_td_avg < 1.5 %}{% set fb_tag = "STRIKER" %}
+  {% elif fb_td_avg >= 2.0 %}{% set fb_tag = "GRAPPLER" %}
+  {% elif fb_slpm > 3.5 %}{% set fb_tag = "STRIKER" %}
+  {% else %}{% set fb_tag = "DECISION SPECIALIST" %}{% endif %}
+{% else %}{% set fb_tag = none %}{% endif %}
+
+{# prediction from moneyline odds #}
+{% set main_bet = (betting | selectattr('fight_id','equalto',main_event.get('fight_id','')) | list | first)
+                  if betting and main_event else none %}
+{% if main_bet %}
+  {% set fa_ml_r = main_bet.get('fa_ml') %}
+  {% set fb_ml_r = main_bet.get('fb_ml') %}
+  {% set fa_ml   = fa_ml_r | float if fa_ml_r else 0 %}
+  {% set fb_ml   = fb_ml_r | float if fb_ml_r else 0 %}
+  {% if fa_ml < 0 %}{% set fa_impl = (fa_ml | abs) / ((fa_ml | abs) + 100) %}
+  {% elif fa_ml > 0 %}{% set fa_impl = 100.0 / (fa_ml + 100) %}
+  {% else %}{% set fa_impl = 0.5 %}{% endif %}
+  {% if fb_ml < 0 %}{% set fb_impl = (fb_ml | abs) / ((fb_ml | abs) + 100) %}
+  {% elif fb_ml > 0 %}{% set fb_impl = 100.0 / (fb_ml + 100) %}
+  {% else %}{% set fb_impl = 0.5 %}{% endif %}
+  {% set _total  = fa_impl + fb_impl %}
+  {% set fa_pred = ((fa_impl / _total) * 100) | round | int if _total > 0 else 50 %}
+{% else %}
+  {% set fa_pred = 50 %}
+{% endif %}
+{% set fb_pred = 100 - fa_pred %}
+
+{# CTA fight link #}
+{% set main_fight_id = main_event.get('fight_id','') if main_event else '' %}
+
+{# ══ TEMPLATE ════════════════════════════════════════════════════════════════ #}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/wireframe.css') }}?v=broadcast-ticker-1">
+
+<div class="wf-page">
+  <div class="wf-shell">
+
+    {# ── HEADER ── #}
+    <div class="wf-header">
+      <div class="wf-header-left">
+        {% if division %}<div class="wf-division">{{ division | upper }} BOUT</div>{% endif %}
+      </div>
+      <div class="wf-cd-wrap">
+        <div class="wf-cd-eyebrow">FIGHT STARTS IN</div>
+        <div class="wf-countdown">
+          <div class="wf-cd-box">
+            <span class="wf-cd-num wf-cd-red" id="wfDays">--</span>
+            <span class="wf-cd-tag">DAYS</span>
+          </div>
+          <span class="wf-cd-colon">:</span>
+          <div class="wf-cd-box">
+            <span class="wf-cd-num" id="wfHours">--</span>
+            <span class="wf-cd-tag">HRS</span>
+          </div>
+          <span class="wf-cd-colon">:</span>
+          <div class="wf-cd-box">
+            <span class="wf-cd-num wf-cd-blue" id="wfMins">--</span>
+            <span class="wf-cd-tag">MIN</span>
+          </div>
+        </div>
+      </div>
+      <div class="wf-header-right">
+        {% if fa_rank and fb_rank %}
+          <div class="wf-rankings">#{{ fa_rank }} <span>vs</span> #{{ fb_rank }}</div>
+        {% endif %}
+      </div>
+    </div>
+
+    {# ── ARENA ── #}
+    <div class="wf-arena">
+
+      {# ── RED CORNER ── #}
+      <div class="wf-col wf-col--red">
+        <div class="wf-card-wrap">
+          <div class="wf-pred-badge wf-pred-badge--red">
+            <span class="wf-pred-badge-pct">{{ fa_pred }}%</span>
+            <span class="wf-pred-badge-sep">·</span>
+            <span class="wf-pred-badge-label">WIN PROB</span>
+          </div>
+          <div class="wf-card-glow wf-card-glow--red">
+            <div class="wf-card-border wf-card-border--red">
+              <div class="wf-card-inner">
+                {% if fa_photo %}
+                  <img src="{{ fa_photo }}" alt="{{ fa_full }}" class="wf-photo">
+                {% else %}
+                  <div class="wf-photo wf-photo--empty"></div>
+                {% endif %}
+                <div class="wf-card-overlay">
+                  {% if fa_rank %}<div class="wf-rank wf-rank--red">#{{ fa_rank }}</div>{% endif %}
+                  <div class="wf-name">{{ fa_last }}</div>
+                  <div class="wf-record">{{ fa_record }}</div>
+                  {% if fa_tag %}<div class="wf-tag wf-tag--red">{{ fa_tag }}</div>{% endif %}
+                </div>
+              </div>
+            </div>
+          </div>{# /card-glow #}
+        </div>{# /card-wrap #}
+        {% if show_methods %}
+        <div class="wf-methods">
+          {% if fa_ko_w %}<div class="wf-mstat wf-mstat--ko"><span class="wf-ml">KO</span><span class="wf-mv">{{ fa_ko_w }}</span></div>{% endif %}
+          {% if fa_su_w %}<div class="wf-mstat wf-mstat--sub"><span class="wf-ml">SUB</span><span class="wf-mv">{{ fa_su_w }}</span></div>{% endif %}
+          {% if fa_de_w %}<div class="wf-mstat wf-mstat--dec"><span class="wf-ml">DEC</span><span class="wf-mv">{{ fa_de_w }}</span></div>{% endif %}
+        </div>
+        {% endif %}
+      </div>
+
+      {# ── CENTER ── #}
+      <div class="wf-center">
+
+        {% if division or (fa_rank and fb_rank) %}
+        <div class="wf-fight-ctx">
+          {% if division %}<span class="wf-ctx-div">{{ division | upper }} BOUT</span>{% endif %}
+          {% if fa_rank and fb_rank %}<span class="wf-ctx-ranks">#{{ fa_rank }} <em>vs</em> #{{ fb_rank }}</span>{% endif %}
+        </div>
+        {% endif %}
+
+        <div class="wf-vs-wrap">
+          <div class="wf-vs-line wf-vs-line--red"></div>
+          <div class="wf-vs">VS</div>
+          <div class="wf-vs-line wf-vs-line--blue"></div>
+        </div>
+
+        {# Stats table — row hidden if both values missing #}
+        <table class="wf-stats">
+          {% if fa_age or fb_age %}
+          <tr>
+            <td class="wf-sv wf-sv--red">{{ (fa_age|int) if fa_age else '—' }}</td>
+            <td class="wf-sk">AGE</td>
+            <td class="wf-sv wf-sv--blue">{{ (fb_age|int) if fb_age else '—' }}</td>
+          </tr>
+          {% endif %}
+          {% if fa_height or fb_height %}
+          <tr>
+            <td class="wf-sv wf-sv--red wf-sv--sm">{{ fa_height or '—' }}</td>
+            <td class="wf-sk">HEIGHT</td>
+            <td class="wf-sv wf-sv--blue wf-sv--sm">{{ fb_height or '—' }}</td>
+          </tr>
+          {% endif %}
+          {% if fa_reach or fb_reach %}
+          <tr>
+            <td class="wf-sv wf-sv--red">{{ fa_reach or '—' }}</td>
+            <td class="wf-sk">REACH</td>
+            <td class="wf-sv wf-sv--blue">{{ fb_reach or '—' }}</td>
+          </tr>
+          {% endif %}
+          {% if fa_weight or fb_weight %}
+          <tr>
+            <td class="wf-sv wf-sv--red">{{ ((fa_weight|int)~' lbs') if fa_weight else '—' }}</td>
+            <td class="wf-sk">WEIGHT</td>
+            <td class="wf-sv wf-sv--blue">{{ ((fb_weight|int)~' lbs') if fb_weight else '—' }}</td>
+          </tr>
+          {% endif %}
+          {% if fa_stance or fb_stance %}
+          <tr>
+            <td class="wf-sv wf-sv--red wf-sv--sm">{{ (fa_stance|upper) if fa_stance else '—' }}</td>
+            <td class="wf-sk">STANCE</td>
+            <td class="wf-sv wf-sv--blue wf-sv--sm">{{ (fb_stance|upper) if fb_stance else '—' }}</td>
+          </tr>
+          {% endif %}
+        </table>
+
+        {# Comparison bars #}
+        <div class="wf-bars">
+          <div class="wf-section-label">COMPARISON</div>
+
+          <div class="wf-bar-row">
+            <span class="wf-bv wf-bv--red">{{ fa_slpm_r | round(1) if fa_slpm_r else '—' }}</span>
+            <div class="wf-bar-wrap">
+              <span class="wf-bar-key">SIG STR / MIN</span>
+              <div class="wf-bar-track">
+                <div class="wf-bar--red" style="width:{{ fa_str_pct }}%"></div>
+                <div class="wf-bar--blue" style="width:{{ fb_str_pct }}%"></div>
+              </div>
+            </div>
+            <span class="wf-bv wf-bv--blue">{{ fb_slpm_r | round(1) if fb_slpm_r else '—' }}</span>
+          </div>
+
+          <div class="wf-bar-row">
+            <span class="wf-bv wf-bv--red">{{ fa_td_avg_r | round(1) if fa_td_avg_r else '—' }}</span>
+            <div class="wf-bar-wrap">
+              <span class="wf-bar-key">TAKEDOWN AVG</span>
+              <div class="wf-bar-track">
+                <div class="wf-bar--red" style="width:{{ fa_grp_pct }}%"></div>
+                <div class="wf-bar--blue" style="width:{{ fb_grp_pct }}%"></div>
+              </div>
+            </div>
+            <span class="wf-bv wf-bv--blue">{{ fb_td_avg_r | round(1) if fb_td_avg_r else '—' }}</span>
+          </div>
+
+          <div class="wf-bar-row">
+            <span class="wf-bv wf-bv--red">{{ ((fa_strdef_r|float*100)|round|int~'%') if fa_strdef_r else '—' }}</span>
+            <div class="wf-bar-wrap">
+              <span class="wf-bar-key">DEFENSE %</span>
+              <div class="wf-bar-track">
+                <div class="wf-bar--red" style="width:{{ fa_def_pct }}%"></div>
+                <div class="wf-bar--blue" style="width:{{ fb_def_pct }}%"></div>
+              </div>
+            </div>
+            <span class="wf-bv wf-bv--blue">{{ ((fb_strdef_r|float*100)|round|int~'%') if fb_strdef_r else '—' }}</span>
+          </div>
+        </div>
+
+        {# CTA #}
+        <a href="/betting{% if main_fight_id %}/{{ main_fight_id }}{% endif %}" class="wf-cta">
+          View Fight Breakdown <span class="wf-cta-arrow">→</span>
+        </a>
+
+      </div>{# /center #}
+
+      {# ── BLUE CORNER ── #}
+      <div class="wf-col wf-col--blue">
+        <div class="wf-card-wrap">
+          <div class="wf-pred-badge wf-pred-badge--blue">
+            <span class="wf-pred-badge-pct">{{ fb_pred }}%</span>
+            <span class="wf-pred-badge-sep">·</span>
+            <span class="wf-pred-badge-label">WIN PROB</span>
+          </div>
+          <div class="wf-card-glow wf-card-glow--blue">
+            <div class="wf-card-border wf-card-border--blue">
+              <div class="wf-card-inner">
+                {% if fb_photo %}
+                  <img src="{{ fb_photo }}" alt="{{ fb_full }}" class="wf-photo">
+                {% else %}
+                  <div class="wf-photo wf-photo--empty"></div>
+                {% endif %}
+                <div class="wf-card-overlay">
+                  {% if fb_rank %}<div class="wf-rank wf-rank--blue">#{{ fb_rank }}</div>{% endif %}
+                  <div class="wf-name">{{ fb_last }}</div>
+                  <div class="wf-record">{{ fb_record }}</div>
+                  {% if fb_tag %}<div class="wf-tag wf-tag--blue">{{ fb_tag }}</div>{% endif %}
+                </div>
+              </div>
+            </div>
+          </div>{# /card-glow #}
+        </div>{# /card-wrap #}
+        {% if show_methods %}
+        <div class="wf-methods">
+          {% if fb_ko_w %}<div class="wf-mstat wf-mstat--ko"><span class="wf-ml">KO</span><span class="wf-mv">{{ fb_ko_w }}</span></div>{% endif %}
+          {% if fb_su_w %}<div class="wf-mstat wf-mstat--sub"><span class="wf-ml">SUB</span><span class="wf-mv">{{ fb_su_w }}</span></div>{% endif %}
+          {% if fb_de_w %}<div class="wf-mstat wf-mstat--dec"><span class="wf-ml">DEC</span><span class="wf-mv">{{ fb_de_w }}</span></div>{% endif %}
+        </div>
+        {% endif %}
+      </div>
+
+    </div>{# /arena #}
+
+    {# ── BOTTOM BAR ── #}
+    <div class="wf-bottom">
+      <div class="wf-bottom-pill wf-bottom-pill--red"></div>
+      <div class="wf-bottom-live">
+        <span class="wf-live-dot"></span>
+        <span>Live Broadcast</span>
+      </div>
+      <div class="wf-bottom-ticker" aria-label="{{ event_title }}{% if event_location %} - {{ event_location }}{% endif %}">
+        <div class="wf-bottom-track">
+          <span class="wf-bottom-text">
+            {{ event_title }}{% if event_location %} &mdash; {{ event_location }}{% endif %}
+          </span>
+          <span class="wf-bottom-sep">Octagon IQ Fight Intelligence</span>
+          <span class="wf-bottom-text">
+            {{ event_title }}{% if event_location %} &mdash; {{ event_location }}{% endif %}
+          </span>
+          <span class="wf-bottom-sep">Live Tactical Readout</span>
+          <span class="wf-bottom-text" aria-hidden="true">
+            {{ event_title }}{% if event_location %} &mdash; {{ event_location }}{% endif %}
+          </span>
+          <span class="wf-bottom-sep" aria-hidden="true">Octagon IQ Fight Intelligence</span>
+        </div>
+      </div>
+      <div class="wf-bottom-pill wf-bottom-pill--blue"></div>
+    </div>
+
+  </div>{# /shell #}
+</div>{# /page #}
+
+<script>
+(function(){
+  var months={January:0,February:1,March:2,April:3,May:4,June:5,
+              July:6,August:7,September:8,October:9,November:10,December:11};
+  var dateStr="{{ event_date }}";
+  var elD=document.getElementById('wfDays'),
+      elH=document.getElementById('wfHours'),
+      elM=document.getElementById('wfMins');
+  if(!dateStr||!elD) return;
+  var m=dateStr.match(/(\w+)\s+(\d+),\s+(\d+)/);
+  if(!m) return;
+  var target=new Date(Date.UTC(+m[3],months[m[1]],+m[2],23,0,0));
+  function pad(n){return String(n).padStart(2,'0');}
+  function tick(){
+    var diff=target-Date.now();
+    if(diff<=0){elD.textContent=elH.textContent=elM.textContent='00';return;}
+    elD.textContent=pad(Math.floor(diff/864e5));
+    elH.textContent=pad(Math.floor((diff%864e5)/36e5));
+    elM.textContent=pad(Math.floor((diff%36e5)/6e4));
+  }
+  tick(); setInterval(tick,30000);
+})();
+</script>
+{% endblock %}

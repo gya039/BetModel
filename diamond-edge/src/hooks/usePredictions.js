@@ -31,17 +31,17 @@ export function usePredictions(dateStr) {
       fetch(updatedPath(dateStr))
         .then(r => (r.ok ? r.json() : null))
         .catch(() => null),
-      fetch(`api/mlb-status?date=${dateStr}`)
-        .then(r => (r.ok ? r.json() : null))
-        .catch(() => null),
     ])
-      .then(([currentJson, updatedJson, statuses]) => {
+      .then(([currentJson, updatedJson]) => {
         if (cancelled) return
         const merged = {
-          current: mergeGameStatuses(currentJson, statuses),
-          updated: updatedJson ? mergeGameStatuses(updatedJson, statuses) : null,
+          current: currentJson,
+          updated: updatedJson ?? null,
         }
-        cache.set(dateStr, merged)
+        // Only cache when updated data is present — if it's null (check-movement
+        // hasn't run yet), skip caching so the next render re-fetches and picks
+        // it up once the file exists.
+        if (merged.updated !== null) cache.set(dateStr, merged)
         setData(merged)
         setLoading(false)
       })
@@ -55,34 +55,4 @@ export function usePredictions(dateStr) {
   }, [dateStr])
 
   return { data, loading, error }
-}
-
-function mergeGameStatuses(payload, statuses) {
-  const games = statuses?.games
-  if (!games || !payload?.predictions) return payload
-
-  return {
-    ...payload,
-    predictions: payload.predictions.map(game => {
-      const live = games[String(game.gamePk)]
-      if (!live) return game
-      return {
-        ...game,
-        gameStatus: live.gameStatus || game.gameStatus,
-        detailedState: live.detailedState || game.detailedState,
-        finalScore: live.gameStatus === 'FINAL'
-          ? { away: live.awayScore, home: live.homeScore }
-          : game.finalScore,
-        liveScore: live.gameStatus === 'LIVE'
-          ? {
-              away: live.awayScore,
-              home: live.homeScore,
-              inning: live.currentInning,
-              half: live.inningHalf,
-              detail: live.detailedState,
-            }
-          : game.liveScore,
-      }
-    }),
-  }
 }

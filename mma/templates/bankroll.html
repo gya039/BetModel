@@ -20,7 +20,7 @@
   <div class="war-room__header">
     <div>
       <div class="hero-kicker"><span class="status-dot"></span> Bankroll War Room</div>
-      <h1>Capital Under Control</h1>
+      <h1>{% if exposure_pct > 80 %}Capital at Risk{% elif exposure_pct > 50 %}Capital Deployed{% else %}Capital Under Control{% endif %}</h1>
       <p>Fight-night staking, exposure discipline, accumulator builds, and bet history for the Octagon IQ model.</p>
     </div>
     <div class="war-room__actions">
@@ -162,9 +162,9 @@
     <p>No accumulator set qualifies yet. Acca legs need positive edge and real decimal odds.</p>
   </div>
   {% else %}
-  <div class="strike-grid">
+  <div class="strike-grid" id="accaGrid">
     {% for acca in accas %}
-    <article class="strike-card">
+    <article class="strike-card{% if loop.index > 3 %} acca-hidden{% endif %}">
       <header>
         <div>
           <span>{{ acca.legs|length }} selections</span>
@@ -203,6 +203,11 @@
     </article>
     {% endfor %}
   </div>
+  {% if accas|length > 3 %}
+  <div style="text-align:center;margin-top:1.25rem">
+    <button class="btn btn--ghost" id="accaShowMore">Show {{ accas|length - 3 }} more accumulators</button>
+  </div>
+  {% endif %}
   {% endif %}
 </section>
 
@@ -272,4 +277,19 @@
   </div>
 </section>
 
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function(){
+  var btn = document.getElementById('accaShowMore');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    document.querySelectorAll('.acca-hidden').forEach(function(el) {
+      el.classList.remove('acca-hidden');
+    });
+    btn.parentElement.remove();
+  });
+})();
+</script>
 {% endblock %}

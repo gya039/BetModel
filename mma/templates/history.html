@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block title %}Betting History | Octagon IQ{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div class="page-header-inner">
+    <div class="page-header-meta">Ledger</div>
+    <h1 class="page-header-title">Betting History</h1>
+    <div class="page-header-sub">Every card, every bet, full P&amp;L trail</div>
+  </div>
+</div>
+
+<div class="hist-shell">
+
+  {% if not summaries %}
+  <div class="empty-state">
+    <div class="empty-icon">📋</div>
+    <div class="empty-title">No events in the ledger yet</div>
+    <div class="empty-sub">Run the prediction pipeline to register your first card.</div>
+  </div>
+  {% else %}
+
+  {# ── Running totals banner ─────────────────────────────────────────────── #}
+  {% set total_staked = summaries | sum(attribute='total_staked') %}
+  {% set total_pnl    = summaries | sum(attribute='total_pnl') %}
+  {% set total_won    = summaries | sum(attribute='won') %}
+  {% set total_lost   = summaries | sum(attribute='lost') %}
+  {% set total_push   = summaries | sum(attribute='push') %}
+  {% set total_bets   = total_won + total_lost + total_push %}
+  {% set win_rate     = ((total_won / total_bets * 100) | round(1)) if total_bets > 0 else 0 %}
+
+  <div class="hist-banner">
+    <div class="hist-stat">
+      <div class="hist-stat-val">{{ summaries | length }}</div>
+      <div class="hist-stat-lbl">Cards</div>
+    </div>
+    <div class="hist-stat">
+      <div class="hist-stat-val">{{ total_bets }}</div>
+      <div class="hist-stat-lbl">Settled bets</div>
+    </div>
+    <div class="hist-stat">
+      <div class="hist-stat-val">{{ win_rate }}%</div>
+      <div class="hist-stat-lbl">Win rate</div>
+    </div>
+    <div class="hist-stat">
+      <div class="hist-stat-val {{ 'pnl-pos' if total_pnl >= 0 else 'pnl-neg' }}">
+        {{ '%+.2f'|format(total_pnl) }}
+      </div>
+      <div class="hist-stat-lbl">Total P&amp;L (EUR)</div>
+    </div>
+    <div class="hist-stat">
+      <div class="hist-stat-val">{{ '%.2f'|format(total_staked) }}</div>
+      <div class="hist-stat-lbl">Total staked (EUR)</div>
+    </div>
+  </div>
+
+  {# ── Per-event cards ───────────────────────────────────────────────────── #}
+  {% for s in summaries %}
+  <details class="hist-event {{ 'hist-event-pending' if s.pending_count > 0 else 'hist-event-settled' }}" {% if loop.first %}open{% endif %}>
+    <summary class="hist-event-header">
+      <div class="hist-event-header-left">
+        <div class="hist-event-meta">
+          <span class="hist-status-badge {{ 'badge-pending' if s.pending_count > 0 else 'badge-settled' }}">
+            {{ 'PENDING' if s.pending_count > 0 else 'SETTLED' }}
+          </span>
+          <span class="hist-event-date">{{ s.event_date }}</span>
+        </div>
+        <div class="hist-event-name">{{ s.event_name }}</div>
+        <div class="hist-event-stats">
+          <span>{{ s.won }}W / {{ s.lost }}L{% if s.push %} / {{ s.push }}P{% endif %}</span>
+          <span class="hist-sep">·</span>
+          <span>Staked: {{ '%.2f'|format(s.total_staked) }} EUR</span>
+          {% if s.pending_count == 0 %}
+          <span class="hist-sep">·</span>
+          <span class="hist-pnl {{ 'pnl-pos' if s.total_pnl >= 0 else 'pnl-neg' }}">
+            P&amp;L: {{ '%+.2f'|format(s.total_pnl) }} EUR
+          </span>
+          {% else %}
+          <span class="hist-sep">·</span>
+          <span class="hist-pending-count">{{ s.pending_count }} unsettled</span>
+          {% endif %}
+        </div>
+      </div>
+      <div class="hist-event-header-right">
+        {% if s.pending_count > 0 %}
+        <a href="/settle/{{ s.event_id }}" class="btn-settle" onclick="event.stopPropagation()">Settle Now →</a>
+        {% endif %}
+        <span class="hist-chevron"></span>
+      </div>
+    </summary>
+
+    {% if s.bets %}
+    <div class="hist-bets-wrap">
+      <table class="hist-bets-table">
+        <thead>
+          <tr>
+            <th>Type</th>
+            <th>Fight / Legs</th>
+            <th>Market</th>
+            <th>Selection</th>
+            <th>Odds</th>
+            <th>Stake</th>
+            <th>Return</th>
+            <th>Result</th>
+            <th>P&amp;L</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for bet in s.bets %}
+          <tr class="hbt-row hbt-{{ bet.status }}">
+            <td><span class="settle-badge settle-badge-type">{{ bet.bet_type | capitalize }}</span></td>
+            <td class="hbt-fight">{{ bet.fight }}</td>
+            <td class="hbt-market">{{ bet.market }}</td>
+            <td><strong>{{ bet.selection }}</strong></td>
+            <td>{{ '%.2f'|format(bet.odds) }}</td>
+            <td>{{ '%.2f'|format(bet.stake_eur) }}</td>
+            <td>{{ '%.2f'|format(bet.potential_return) }}</td>
+            <td>
+              <span class="settle-badge settle-badge-{{ bet.status }}">
+                {{ bet.status | capitalize }}
+              </span>
+            </td>
+            <td class="{{ 'pnl-pos' if (bet.pnl or 0) > 0 else ('pnl-neg' if (bet.pnl or 0) < 0 else '') }}">
+              {% if bet.pnl is not none %}{{ '%+.2f'|format(bet.pnl) }}{% else %}—{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </details>
+  {% endfor %}
+
+  {% endif %}
+</div>
+{% endblock %}
