@@ -21,6 +21,7 @@ import backup as _backup
 import scheduler as _scheduler
 import log as _slog
 from auth import require_admin_token, rate_limit, admin_action
+import hero_image as _hero
 
 log = get_logger("app")
 
@@ -67,8 +68,12 @@ def _get_weight_class(weight_lbs):
     return "Heavyweight"
 
 def _get_exp_tier(fighter):
-    total = (fighter.get("wins") or 0) + (fighter.get("losses") or 0) + (fighter.get("draws") or 0)
-    if total >= 20: return "elite"
+    total   = (fighter.get("wins") or 0) + (fighter.get("losses") or 0) + (fighter.get("draws") or 0)
+    ufc     = fighter.get("total_fights") or 0
+    streak  = fighter.get("current_streak") or 0
+    wr      = fighter.get("win_rate") or 0
+    # Elite: veteran of 20+ pro fights, OR dominant UFC record (8+ UFC wins, ≥90% WR, ≥6-fight streak)
+    if total >= 20 or (ufc >= 8 and wr >= 90 and streak >= 6): return "elite"
     if total >= 10: return "veteran"
     if total >= 5:  return "prospect"
     return "newcomer"
@@ -388,13 +393,70 @@ def index():
     plan = enrich_plan(load_staking())
     betting = [enrich_fight(fight) for fight in load_betting()]
     active_event = ledger.get_active_event()
+
+    # Hero image — generate in background on first load, serve from cache thereafter
+    event_name = card.get("event_name") or "UFC Fight Night"
+    hero_img = _hero.image_url(event_name)
+    if not hero_img and matchups:
+        main    = matchups[0]
+        fa      = main.get("fighter_a") or {}
+        fb      = main.get("fighter_b") or {}
+        fa_name = fa.get("name", "Fighter A")
+        fb_name = fb.get("name", "Fighter B")
+        wc      = main.get("weight_class", "UFC")
+        _hero.request_generation(
+            event_name, fa_name, fb_name, wc,
+            fa_photo_url=fa.get("photo", ""),
+            fb_photo_url=fb.get("photo", ""),
+        )
+
     return render_template("index.html",
                            card=card,
                            matchups=matchups,
                            fighters=fighters,
                            plan=plan,
                            betting=betting,
-                           active_event=active_event)
+                           active_event=active_event,
+                           hero_img=hero_img)
+
+
+@app.route("/api/hero-image", methods=["GET"])
+def hero_image_status():
+    card, _, matchups, _ = load_all()
+    event_name = card.get("event_name") or "UFC Fight Night"
+    return jsonify({
+        "event":   event_name,
+        "status":  _hero.get_status(event_name),
+        "url":     _hero.image_url(event_name),
+        "meta":    _hero.get_meta(event_name),
+    })
+
+
+@app.route("/api/hero-image/regenerate", methods=["POST"])
+def hero_image_regenerate():
+    card, _, matchups, _ = load_all()
+    if not matchups:
+        return jsonify({"ok": False, "error": "No card loaded"}), 400
+    event_name = card.get("event_name") or "UFC Fight Night"
+    main    = matchups[0]
+    fa      = main.get("fighter_a") or {}
+    fb      = main.get("fighter_b") or {}
+    fa_name = fa.get("name", "Fighter A")
+    fb_name = fb.get("name", "Fighter B")
+    wc      = main.get("weight_class", "UFC")
+    _hero.force_regenerate(
+        event_name, fa_name, fb_name, wc,
+        fa_photo_url=fa.get("photo", ""),
+        fb_photo_url=fb.get("photo", ""),
+    )
+    return jsonify({"ok": True, "status": "generating", "event": event_name,
+                    "fighters": [fa_name, fb_name]})
+
+
+# keep old path alive for any bookmarks
+@app.route("/api/hero/regenerate", methods=["POST"])
+def _hero_regen_legacy():
+    return hero_image_regenerate()
 
 
 @app.route("/fighters")
@@ -457,10 +519,16 @@ def betting_overview():
 @app.route("/betting/<fight_id>")
 def betting_fight(fight_id: str):
     card, _, _, _ = load_all()
+    photos = _load(DATA_PROC / "fighter_photos.json", {})
     fights = [enrich_fight(fight) for fight in load_betting()]
     fight = next((item for item in fights if item.get("fight_id") == fight_id), None)
     if not fight:
         abort(404)
+    for corner in ("fighter_a", "fighter_b"):
+        f = fight.get(corner) or {}
+        fid = f.get("fighter_id", "")
+        if fid and fid in photos:
+            f["photo"] = photos[fid]
     return render_template("betting_fight.html", card=card, fight=fight)
 
 
@@ -882,6 +950,55 @@ def dl_staking_json():
 @app.route("/download/bet_history.csv")
 def dl_bet_history_csv():
     return send_file(str(BET_HISTORY_CSV), as_attachment=True) if BET_HISTORY_CSV.exists() else ("Not found", 404)
+
+
+# ── model health dashboard ────────────────────────────────────────────────────
+
+@app.route("/model-health")
+def model_health():
+    """Model calibration and performance dashboard."""
+    try:
+        import calibration as _cal
+        data = _cal.model_health_data()
+    except Exception as exc:
+        data = {"error": str(exc)}
+    return render_template("model_health.html", health=data)
+
+
+@app.route("/api/model-health")
+def api_model_health():
+    """JSON endpoint for calibration metrics."""
+    try:
+        import calibration as _cal
+        data = _cal.model_health_data()
+        return jsonify(data)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/backtest")
+def api_backtest():
+    """
+    Run backtest over a date range and return JSON results.
+    Query params: from (YYYY-MM), to (YYYY-MM), bankroll, stake_pct, edge_min
+    """
+    from_ym = request.args.get("from", "2022-01")
+    to_ym = request.args.get("to", "2025-12")
+    bankroll = float(request.args.get("bankroll", 500.0))
+    stake_pct = float(request.args.get("stake_pct", 0.5)) / 100
+    edge_min = float(request.args.get("edge_min", 4.0))
+    try:
+        import backtest as _bt
+        results = _bt.run_backtest(
+            from_ym=from_ym,
+            to_ym=to_ym,
+            starting_bankroll=bankroll,
+            stake_pct=stake_pct,
+            edge_min=edge_min,
+        )
+        return jsonify(results)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
 
 
 # ── error pages ───────────────────────────────────────────────────────────────

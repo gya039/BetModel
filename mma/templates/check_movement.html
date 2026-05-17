@@ -77,16 +77,24 @@
   </div>
 </div>
 
-<section class="section">
-  <div class="section-heading-row">
-    <div>
-      <h2 class="section-heading">Real Line Movement</h2>
-      <p class="section-blurb">One collapsible fight block per fight. Open only the fights you care about.</p>
-    </div>
-  </div>
+<div class="mv-tabs" id="mvTabs" role="tablist">
+  <button class="mv-tab mv-tab--active" role="tab" data-tab="moves" aria-selected="true">
+    Real Moves
+    {% if report.significant_move_count %}<span class="mv-tab__count">{{ report.significant_move_count }}</span>{% endif %}
+  </button>
+  <button class="mv-tab" role="tab" data-tab="holds" aria-selected="false">
+    Value Holds
+    {% if report.value_hold_count %}<span class="mv-tab__count mv-tab__count--gold">{{ report.value_hold_count }}</span>{% endif %}
+  </button>
+  <button class="mv-tab" role="tab" data-tab="archive" aria-selected="false">
+    Archive
+  </button>
+</div>
+
+<section class="section mv-panel mv-panel--active" id="mv-moves" role="tabpanel">
   {% if not report.moved_groups %}
   <div class="empty-state movement-empty">
-    <p>No real movement detected yet.</p>
+    <p>No real movement detected yet. Run a check to compare prices.</p>
   </div>
   {% else %}
   <div class="movement-groups">
@@ -100,7 +108,7 @@
         <div class="fight-group__meta">
           <span class="fg-chip">{{ group.move_count }} moved</span>
           {% if group.largest_delta is number %}<span class="fg-chip">max Δ {{ "%.2f"|format(group.largest_delta) }}</span>{% endif %}
-          {% if group.best_edge is number %}<span class="fg-chip fg-chip--edge">best edge {{ group.best_edge }}%</span>{% endif %}
+          {% if group.best_edge is number %}<span class="fg-chip fg-chip--edge {% if group.best_edge < 0 %}fg-chip--edge-negative{% endif %}">best edge {{ group.best_edge }}%</span>{% endif %}
         </div>
       </summary>
       <div class="fight-group__body">
@@ -114,13 +122,7 @@
   {% endif %}
 </section>
 
-<section class="section">
-  <div class="section-heading-row">
-    <div>
-      <h2 class="section-heading">Value Holds</h2>
-      <p class="section-blurb">Stable prices that still look playable at the current number.</p>
-    </div>
-  </div>
+<section class="section mv-panel" id="mv-holds" role="tabpanel" hidden>
   {% if not report.value_hold_groups %}
   <div class="empty-state movement-empty">
     <p>No stable value spots are standing out right now.</p>
@@ -128,7 +130,7 @@
   {% else %}
   <div class="movement-groups">
     {% for group in report.value_hold_groups %}
-    <details class="fight-group">
+    <details class="fight-group" {% if loop.first %}open{% endif %}>
       <summary class="fight-group__summary">
         <div class="fight-group__title">
           <strong>{{ group.fight }}</strong>
@@ -150,13 +152,7 @@
   {% endif %}
 </section>
 
-<section class="section">
-  <div class="section-heading-row">
-    <div>
-      <h2 class="section-heading">Full Fight Archive</h2>
-      <p class="section-blurb">All priced rows, grouped by fight. This replaces the cut-off table.</p>
-    </div>
-  </div>
+<section class="section mv-panel" id="mv-archive" role="tabpanel" hidden>
   {% if not report.fight_groups %}
   <div class="empty-state movement-empty">
     <p>No priced movement archive generated yet.</p>
@@ -190,22 +186,38 @@
 
 {% block scripts %}
 <script>
-  const movementForm = document.getElementById('movementForm');
-  const movementButton = document.getElementById('movementButton');
+  // Tab switcher
+  (function(){
+    var tabs = document.querySelectorAll('.mv-tab');
+    var panels = document.querySelectorAll('.mv-panel');
+    tabs.forEach(function(tab) {
+      tab.addEventListener('click', function() {
+        var target = tab.dataset.tab;
+        tabs.forEach(function(t) { t.classList.remove('mv-tab--active'); t.setAttribute('aria-selected','false'); });
+        panels.forEach(function(p) { p.hidden = true; p.classList.remove('mv-panel--active'); });
+        tab.classList.add('mv-tab--active');
+        tab.setAttribute('aria-selected','true');
+        var panel = document.getElementById('mv-' + target);
+        if (panel) { panel.hidden = false; panel.classList.add('mv-panel--active'); }
+      });
+    });
+  })();
+
+  // Run check button
+  var movementForm = document.getElementById('movementForm');
+  var movementButton = document.getElementById('movementButton');
   if (movementForm && movementButton) {
-    movementForm.addEventListener('submit', async (e) => {
+    movementForm.addEventListener('submit', async function(e) {
       e.preventDefault();
       movementButton.disabled = true;
       movementButton.textContent = 'Running...';
-      const res = await fetch('/api/check-movement', { method: 'POST' });
-      if (!res.ok) {
-        movementButton.textContent = 'Error';
-        return;
-      }
+      var res = await fetch('/api/check-movement', { method: 'POST' });
+      if (!res.ok) { movementButton.textContent = 'Error'; return; }
       window.location.reload();
     });
   }
-  // Format ISO timestamp to human-readable
+
+  // Format ISO timestamp
   var tsEl = document.getElementById('lastRunTs');
   if (tsEl && tsEl.dataset.iso) {
     try {

@@ -10,7 +10,7 @@
   </div>
 </div>
 
-<div class="container" style="max-width:960px;margin:0 auto;padding:2rem 1rem 4rem;">
+<div class="hist-shell">
 
   {% if not summaries %}
   <div class="empty-state">
@@ -56,33 +56,38 @@
 
   {# ── Per-event cards ───────────────────────────────────────────────────── #}
   {% for s in summaries %}
-  <div class="hist-event {{ 'hist-event-pending' if s.pending_count > 0 else 'hist-event-settled' }}">
-    <div class="hist-event-header">
-      <div class="hist-event-meta">
-        <span class="hist-status-badge {{ 'badge-pending' if s.pending_count > 0 else 'badge-settled' }}">
-          {{ 'PENDING' if s.pending_count > 0 else 'SETTLED' }}
-        </span>
-        <span class="hist-event-date">{{ s.event_date }}</span>
+  <details class="hist-event {{ 'hist-event-pending' if s.pending_count > 0 else 'hist-event-settled' }}" {% if loop.first %}open{% endif %}>
+    <summary class="hist-event-header">
+      <div class="hist-event-header-left">
+        <div class="hist-event-meta">
+          <span class="hist-status-badge {{ 'badge-pending' if s.pending_count > 0 else 'badge-settled' }}">
+            {{ 'PENDING' if s.pending_count > 0 else 'SETTLED' }}
+          </span>
+          <span class="hist-event-date">{{ s.event_date }}</span>
+        </div>
+        <div class="hist-event-name">{{ s.event_name }}</div>
+        <div class="hist-event-stats">
+          <span>{{ s.won }}W / {{ s.lost }}L{% if s.push %} / {{ s.push }}P{% endif %}</span>
+          <span class="hist-sep">·</span>
+          <span>Staked: {{ '%.2f'|format(s.total_staked) }} EUR</span>
+          {% if s.pending_count == 0 %}
+          <span class="hist-sep">·</span>
+          <span class="hist-pnl {{ 'pnl-pos' if s.total_pnl >= 0 else 'pnl-neg' }}">
+            P&amp;L: {{ '%+.2f'|format(s.total_pnl) }} EUR
+          </span>
+          {% else %}
+          <span class="hist-sep">·</span>
+          <span class="hist-pending-count">{{ s.pending_count }} unsettled</span>
+          {% endif %}
+        </div>
       </div>
-      <div class="hist-event-name">{{ s.event_name }}</div>
-      <div class="hist-event-stats">
-        <span>{{ s.won }}W / {{ s.lost }}L{% if s.push %} / {{ s.push }}P{% endif %}</span>
-        <span class="hist-sep">·</span>
-        <span>Staked: {{ '%.2f'|format(s.total_staked) }} EUR</span>
-        {% if s.pending_count == 0 %}
-        <span class="hist-sep">·</span>
-        <span class="hist-pnl {{ 'pnl-pos' if s.total_pnl >= 0 else 'pnl-neg' }}">
-          P&amp;L: {{ '%+.2f'|format(s.total_pnl) }} EUR
-        </span>
-        {% else %}
-        <span class="hist-sep">·</span>
-        <span class="hist-pending-count">{{ s.pending_count }} unsettled</span>
+      <div class="hist-event-header-right">
+        {% if s.pending_count > 0 %}
+        <a href="/settle/{{ s.event_id }}" class="btn-settle" onclick="event.stopPropagation()">Settle Now →</a>
         {% endif %}
+        <span class="hist-chevron"></span>
       </div>
-      {% if s.pending_count > 0 %}
-      <a href="/settle/{{ s.event_id }}" class="btn-settle">Settle Now →</a>
-      {% endif %}
-    </div>
+    </summary>
 
     {% if s.bets %}
     <div class="hist-bets-wrap">
@@ -124,7 +129,7 @@
       </table>
     </div>
     {% endif %}
-  </div>
+  </details>
   {% endfor %}
 
   {% endif %}

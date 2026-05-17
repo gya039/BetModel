@@ -1414,11 +1414,21 @@ def settle_event(
                     )
 
                 now = _utcnow()
+                # Start running balance from the most recent settled bet's bankroll_after,
+                # OR from the post_event snapshot, OR fall back to base.
+                # DO NOT use b_before + stake + pnl — that double-counts stakes.
+                # Instead use: b_after = b_before + pnl  (stake was already committed).
                 last = con.execute(
-                    """SELECT bankroll_after FROM bets
-                       WHERE status != 'pending' AND bankroll_after IS NOT NULL
-                       ORDER BY settled_at DESC LIMIT 1"""
+                    """SELECT bankroll_after FROM bankroll_snapshots
+                       WHERE snapshot_type='post_event'
+                       ORDER BY snapshot_at DESC LIMIT 1"""
                 ).fetchone()
+                if not last:
+                    last = con.execute(
+                        """SELECT bankroll_after FROM bets
+                           WHERE status != 'pending' AND bankroll_after IS NOT NULL
+                           ORDER BY settled_at DESC LIMIT 1"""
+                    ).fetchone()
                 running: Decimal = _d(last["bankroll_after"]) if last else _BASE_BANKROLL
                 summary["bankroll_before"] = _f(running)
                 ledger_running: Decimal    = _ledger_balance(con)
@@ -1459,7 +1469,9 @@ def settle_event(
                         entry_type   = "bet_void"
                         entry_amount = stake
 
-                    b_after        = b_before + stake + pnl
+                    # b_before is the bankroll with stakes already committed.
+                    # Won: get back profit (return - stake). Lost: bankroll decreases by stake.
+                    b_after        = b_before + pnl
                     running        = b_after
                     ledger_running = ledger_running + entry_amount
                     total_pnl      = total_pnl + pnl

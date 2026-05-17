@@ -23,15 +23,15 @@ UPCOMING_URL = "http://ufcstats.com/statistics/events/upcoming?page=all"
 def _find_target_event(soup: BeautifulSoup) -> dict:
     """
     Walk the upcoming-events table and return the first event that is today or
-    in the future, so the pipeline always auto-advances to the next card.
-    Falls back to the very first listed row if date parsing fails for all rows.
+    in the future.  Events with an unparseable date are kept as a last-resort
+    fallback but never selected before a clearly-future event.
     """
     rows = soup.select("tr.b-statistics__table-events_row")
     if not rows:
         rows = soup.select("table.b-statistics__table-events tbody tr")
 
     today = date.today()
-    first_fallback = None
+    no_date_fallback = None   # first row whose date we couldn't parse
 
     for row in rows:
         link = row.find("a")
@@ -40,10 +40,7 @@ def _find_target_event(soup: BeautifulSoup) -> dict:
         name = link.get_text(strip=True)
         href = link["href"].strip()
 
-        if not first_fallback:
-            first_fallback = {"name": name, "url": href}
-
-        # Try to read the date column (second <td> on upcoming-events rows)
+        # Try to read the date column
         tds = row.find_all("td")
         event_date = None
         for td in tds:
@@ -57,18 +54,22 @@ def _find_target_event(soup: BeautifulSoup) -> dict:
             if event_date:
                 break
 
-        if event_date and event_date >= today:
-            log.info("Auto-selected next upcoming event: %s (%s)", name, event_date)
-            return {"name": name, "url": href}
-        elif event_date is None:
-            # No date parsed — treat as future (safe fallback)
-            log.info("No date found for %s — selecting as candidate", name)
-            return {"name": name, "url": href}
+        if event_date:
+            if event_date >= today:
+                log.info("Auto-selected next upcoming event: %s (%s)", name, event_date)
+                return {"name": name, "url": href}
+            else:
+                log.info("Skipping past event: %s (%s)", name, event_date)
+        else:
+            # No date parsed — keep as fallback but keep scanning
+            log.info("No date found for %s — keeping as fallback candidate", name)
+            if no_date_fallback is None:
+                no_date_fallback = {"name": name, "url": href}
 
-    if first_fallback:
-        log.warning("Could not parse event dates — using first listed: %s",
-                    first_fallback["name"])
-        return first_fallback
+    if no_date_fallback:
+        log.warning("No clearly-future event found — using first undated entry: %s",
+                    no_date_fallback["name"])
+        return no_date_fallback
 
     raise RuntimeError("No upcoming events found on ufcstats.com.")
 

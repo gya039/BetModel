@@ -9,12 +9,143 @@
 
 <section class="page-header">
   <div class="breadcrumb"><a href="/betting">← Betting Board</a></div>
-  <h1 class="page-title matchup-title">
-    <a href="/fighter/{{ fa.fighter_id }}">{{ fa.name }}</a>
-    <span class="matchup-vs">VS</span>
-    <a href="/fighter/{{ fb.fighter_id }}">{{ fb.name }}</a>
-  </h1>
-  <p class="page-sub">{{ fight.weight_class }} betting analysis{% if not fight.odds_available %} - odds not loaded yet{% endif %}</p>
+  <p class="page-sub">{{ fight.weight_class }} betting analysis{% if not fight.odds_available %} · odds not loaded yet{% endif %}</p>
+</section>
+
+{# ── Fighter face-off hero ────────────────────────────────────────────────── #}
+<div class="faceoff-hero">
+
+  {# Left fighter #}
+  <div class="faceoff-panel faceoff-panel--left">
+    <div class="faceoff-panel__tint faceoff-panel__tint--left"></div>
+    {% if fa.photo %}
+    <img class="faceoff-panel__img faceoff-panel__img--left" src="{{ fa.photo }}" alt="{{ fa.name }}" loading="lazy">
+    {% else %}
+    <div class="faceoff-panel__img faceoff-panel__img--empty"></div>
+    {% endif %}
+    <div class="faceoff-panel__info faceoff-panel__info--left">
+      <span class="faceoff-corner-tag faceoff-corner-tag--red">RED CORNER</span>
+      <a class="faceoff-fighter-name" href="/fighter/{{ fa.fighter_id }}">{{ fa.name }}</a>
+      {% if fa.nickname %}<span class="faceoff-fighter-nick">"{{ fa.nickname }}"</span>{% endif %}
+      <div class="faceoff-fighter-meta">
+        <span class="faceoff-record">{{ fa.wins }}-{{ fa.losses }}{% if fa.draws %}-{{ fa.draws }}{% endif %}</span>
+        <span class="faceoff-wc-tag">{{ fight.weight_class }}</span>
+      </div>
+    </div>
+  </div>
+
+  {# Centre badge #}
+  <div class="faceoff-vs-badge">
+    <span>VS</span>
+  </div>
+
+  {# Right fighter #}
+  <div class="faceoff-panel faceoff-panel--right">
+    <div class="faceoff-panel__tint faceoff-panel__tint--right"></div>
+    {% if fb.photo %}
+    <img class="faceoff-panel__img faceoff-panel__img--right" src="{{ fb.photo }}" alt="{{ fb.name }}" loading="lazy">
+    {% else %}
+    <div class="faceoff-panel__img faceoff-panel__img--empty"></div>
+    {% endif %}
+    <div class="faceoff-panel__info faceoff-panel__info--right">
+      <span class="faceoff-corner-tag faceoff-corner-tag--blue">BLUE CORNER</span>
+      <a class="faceoff-fighter-name" href="/fighter/{{ fb.fighter_id }}">{{ fb.name }}</a>
+      {% if fb.nickname %}<span class="faceoff-fighter-nick">"{{ fb.nickname }}"</span>{% endif %}
+      <div class="faceoff-fighter-meta">
+        <span class="faceoff-record">{{ fb.wins }}-{{ fb.losses }}{% if fb.draws %}-{{ fb.draws }}{% endif %}</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+{# ── Side-by-side stat comparison ────────────────────────────────────────── #}
+{% set slpm_a = fa.slpm or 0 %}
+{% set slpm_b = fb.slpm or 0 %}
+{% set slpm_sum = slpm_a + slpm_b %}
+{% set td_a = fa.avg_takedowns_landed or 0 %}
+{% set td_b = fb.avg_takedowns_landed or 0 %}
+{% set td_sum = td_a + td_b %}
+{% set def_a = (fa.str_def or 0) * 100 %}
+{% set def_b = (fb.str_def or 0) * 100 %}
+{% set def_sum = def_a + def_b %}
+
+<section class="stat-compare">
+
+  <div class="sc-header">
+    <span class="sc-header-name"><span class="sc-dot sc-dot--red"></span>{{ fa.name }}</span>
+    <span class="sc-header-divider">COMPARISON</span>
+    <span class="sc-header-name sc-header-name--right">{{ fb.name }}<span class="sc-dot sc-dot--blue"></span></span>
+  </div>
+
+  <div class="sc-attrs">
+    <div class="sc-attr-row">
+      <span class="sc-attr-val sc-attr-val--left">{{ fa.age | int if fa.age else "—" }}</span>
+      <span class="sc-attr-key">AGE</span>
+      <span class="sc-attr-val sc-attr-val--right">{{ fb.age | int if fb.age else "—" }}</span>
+    </div>
+    <div class="sc-attr-row">
+      <span class="sc-attr-val sc-attr-val--left">{{ fa.height_raw or "—" }}</span>
+      <span class="sc-attr-key">HEIGHT</span>
+      <span class="sc-attr-val sc-attr-val--right">{{ fb.height_raw or "—" }}</span>
+    </div>
+    <div class="sc-attr-row">
+      <span class="sc-attr-val sc-attr-val--left">{{ fa.reach_raw or "—" }}</span>
+      <span class="sc-attr-key">REACH</span>
+      <span class="sc-attr-val sc-attr-val--right">{{ fb.reach_raw or "—" }}</span>
+    </div>
+    <div class="sc-attr-row">
+      <span class="sc-attr-val sc-attr-val--left">{{ fa.stance or "—" }}</span>
+      <span class="sc-attr-key">STANCE</span>
+      <span class="sc-attr-val sc-attr-val--right">{{ fb.stance or "—" }}</span>
+    </div>
+  </div>
+
+  <div class="sc-bars">
+
+    <div class="sc-bar-row">
+      <span class="sc-bv sc-bv--left">{{ "%.1f"|format(slpm_a) }}</span>
+      <div class="sc-dual">
+        <div class="sc-half sc-half--left">
+          <div class="sc-fill sc-fill--left" style="width:{{ ((slpm_a / slpm_sum * 100) | int) if slpm_sum else 50 }}%"></div>
+        </div>
+        <div class="sc-half sc-half--right">
+          <div class="sc-fill sc-fill--right" style="width:{{ ((slpm_b / slpm_sum * 100) | int) if slpm_sum else 50 }}%"></div>
+        </div>
+      </div>
+      <span class="sc-bv sc-bv--right">{{ "%.1f"|format(slpm_b) }}</span>
+      <span class="sc-bmetric">SIG STR / MIN</span>
+    </div>
+
+    <div class="sc-bar-row">
+      <span class="sc-bv sc-bv--left">{{ "%.1f"|format(td_a) }}</span>
+      <div class="sc-dual">
+        <div class="sc-half sc-half--left">
+          <div class="sc-fill sc-fill--left" style="width:{{ ((td_a / td_sum * 100) | int) if td_sum else 50 }}%"></div>
+        </div>
+        <div class="sc-half sc-half--right">
+          <div class="sc-fill sc-fill--right" style="width:{{ ((td_b / td_sum * 100) | int) if td_sum else 50 }}%"></div>
+        </div>
+      </div>
+      <span class="sc-bv sc-bv--right">{{ "%.1f"|format(td_b) }}</span>
+      <span class="sc-bmetric">TAKEDOWN AVG</span>
+    </div>
+
+    <div class="sc-bar-row">
+      <span class="sc-bv sc-bv--left">{{ "%.0f"|format(def_a) }}%</span>
+      <div class="sc-dual">
+        <div class="sc-half sc-half--left">
+          <div class="sc-fill sc-fill--left" style="width:{{ ((def_a / def_sum * 100) | int) if def_sum else 50 }}%"></div>
+        </div>
+        <div class="sc-half sc-half--right">
+          <div class="sc-fill sc-fill--right" style="width:{{ ((def_b / def_sum * 100) | int) if def_sum else 50 }}%"></div>
+        </div>
+      </div>
+      <span class="sc-bv sc-bv--right">{{ "%.0f"|format(def_b) }}%</span>
+      <span class="sc-bmetric">DEFENSE %</span>
+    </div>
+
+  </div>
 </section>
 
 <section class="section">

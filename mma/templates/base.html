@@ -6,9 +6,9 @@
   <title>{% block title %}Octagon IQ{% endblock %}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=ui-polish-9">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/style-v3.css') }}?v=2">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style-v3.css') }}?v=3-settle">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -21,11 +21,13 @@
       </a>
       <div class="nav-links" id="navLinks">
         <a href="/" class="nav-link {% if request.path == '/' %}active{% endif %}">Home</a>
-        <a href="/fighters" class="nav-link {% if '/fighters' in request.path %}active{% endif %}">Fighters</a>
-        <a href="/betting" class="nav-link {% if '/betting' in request.path %}active{% endif %}">Betting</a>
-        <a href="/check-movement" class="nav-link {% if '/check-movement' in request.path %}active{% endif %}">Movement</a>
+        <a href="/betting" class="nav-link nav-link--featured {% if '/betting' in request.path %}active{% endif %}">Betting</a>
         <a href="/bankroll" class="nav-link {% if '/bankroll' in request.path %}active{% endif %}">Bankroll</a>
-        <a href="/export" class="nav-link {% if '/export' in request.path %}active{% endif %}">Export</a>
+        <a href="/history" class="nav-link {% if '/history' in request.path %}active{% endif %}">History</a>
+        <a href="/check-movement" class="nav-link {% if '/check-movement' in request.path %}active{% endif %}">Movement</a>
+        <a href="/fighters" class="nav-link {% if '/fighters' in request.path %}active{% endif %}">Fighters</a>
+        <a href="/model-health" class="nav-link {% if '/model-health' in request.path %}active{% endif %}">Model Health</a>
+        <a href="/export" class="nav-link nav-link--util {% if request.path == '/export' %}active{% endif %}" title="Export data">Export</a>
       </div>
       <button class="nav-hamburger" id="navHamburger" aria-label="Toggle menu">
         <span></span><span></span><span></span>
